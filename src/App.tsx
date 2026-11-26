@@ -29,8 +29,9 @@ type CatalogCategory = { id: string; name: string; description: string; icon?: s
 type CatalogService = { id: string; categoryId: string; name: string; description: string; price: number; icon?: string }
 type ServiceCatalogData = { categories: CatalogCategory[]; services: CatalogService[] }
 type CartItem = { serviceId: string; categoryName: string; name: string; description: string; price: number; quantity: number }
-type DemoAttachment = { name: string; type: string; size: number }
+type DemoAttachment = { name: string; type: string; size: number; dataUrl?: string }
 type DemoMessage = { id: string; senderRole: 'user' | 'operator'; senderName: string; text: string; createdAt: string; attachment?: DemoAttachment }
+type DemoAdditionalService = { id: string; item: CartItem; status: 'pending' | 'processing' | 'paid' | 'failed'; createdAt: string }
 type DemoOrder = {
   id: string
   userId: string
@@ -40,8 +41,12 @@ type DemoOrder = {
   items: CartItem[]
   totalPrice: number
   status: string
+  conversationStatus?: 'open' | 'closed'
+  cancellationFee?: number
+  refundAmount?: number
   createdAt: string
   messages: DemoMessage[]
+  additionalServices?: DemoAdditionalService[]
 }
 type AppEvent = { id: string; title: string; startDate: string; endDate: string; categoryId?: string; serviceId?: string }
 type AdminUserGender = 'female' | 'male' | 'undisclosed'
@@ -59,7 +64,10 @@ const adminOperatorsStorageKey = 'xcafinet-admin-operators'
 const demoOrdersStorageKey = 'xcafinet-demo-orders'
 const demoUserId = 'demo-user-negar'
 const demoUserName = 'نگار محمدی'
+const demoUserPhone = '۰۹۱۲ ۳۴۵ ۶۷۸۹'
+const demoWalletInitialBalance = 24_800_000
 const demoOperators = [{ id: 'demo-operator-sara', fullName: 'سارا احمدی', isAvailable: true }]
+const maxDemoDocumentSize = 2 * 1024 * 1024
 const maxBirthDate = new Date()
 const themeStorageKey = 'xcafinet-theme'
 const siteStyleStorageKey = 'xcafinet-site-style'
@@ -162,6 +170,12 @@ function normalizeDigits(value: string): string {
 
 function toPersianDigits(value: string): string {
   return value.replace(/[0-9]/g, (digit) => '۰۱۲۳۴۵۶۷۸۹'[Number(digit)])
+}
+
+function formatDemoFileSize(size: number): string {
+  if (size < 1024) return `${new Intl.NumberFormat('fa-IR').format(size)} بایت`
+  const kilobytes = size / 1024
+  return `${new Intl.NumberFormat('fa-IR', { maximumFractionDigits: 1 }).format(kilobytes)} کیلوبایت`
 }
 
 function isAdminUser(value: unknown): value is StoredAdminUser {
@@ -340,6 +354,21 @@ function isDemoAttachment(value: unknown): value is DemoAttachment {
     && typeof value.size === 'number'
     && Number.isSafeInteger(value.size)
     && value.size >= 0
+    && (!('dataUrl' in value) || value.dataUrl === undefined || (typeof value.dataUrl === 'string' && /^data:[^,]+;base64,[A-Za-z0-9+/]*={0,2}$/.test(value.dataUrl)))
+}
+
+function isDemoAdditionalService(value: unknown): value is DemoAdditionalService {
+  return typeof value === 'object'
+    && value !== null
+    && 'id' in value
+    && 'item' in value
+    && 'status' in value
+    && 'createdAt' in value
+    && typeof value.id === 'string'
+    && isCartItem(value.item)
+    && (value.status === 'pending' || value.status === 'processing' || value.status === 'paid' || value.status === 'failed')
+    && typeof value.createdAt === 'string'
+    && !Number.isNaN(Date.parse(value.createdAt))
 }
 
 function isDemoOrder(value: unknown): value is DemoOrder {
@@ -367,10 +396,14 @@ function isDemoOrder(value: unknown): value is DemoOrder {
     && Number.isSafeInteger(value.totalPrice)
     && value.totalPrice > 0
     && typeof value.status === 'string'
+    && (!('conversationStatus' in value) || value.conversationStatus === 'open' || value.conversationStatus === 'closed')
+    && (!('cancellationFee' in value) || value.cancellationFee === undefined || (typeof value.cancellationFee === 'number' && Number.isSafeInteger(value.cancellationFee) && value.cancellationFee >= 0))
+    && (!('refundAmount' in value) || value.refundAmount === undefined || (typeof value.refundAmount === 'number' && Number.isSafeInteger(value.refundAmount) && value.refundAmount >= 0))
     && typeof value.createdAt === 'string'
     && !Number.isNaN(Date.parse(value.createdAt))
     && Array.isArray(value.messages)
     && value.messages.every(isDemoMessage)
+    && (!('additionalServices' in value) || (Array.isArray(value.additionalServices) && value.additionalServices.every(isDemoAdditionalService)))
 }
 
 function loadDemoOrders(): DemoOrder[] {
@@ -589,6 +622,7 @@ function App() {
   const [events, setEvents] = useState(loadEvents)
   const [cart, setCart] = useState(loadCart)
   const [demoOrders, setDemoOrders] = useState(loadDemoOrders)
+  const demoWalletBalance = demoOrders.reduce((balance, order) => balance + (order.refundAmount ?? 0), demoWalletInitialBalance)
   const [activeDemoOrderId, setActiveDemoOrderId] = useState<string | null>(null)
   const [requestedServiceId, setRequestedServiceId] = useState<string | null>(null)
   const [cartNotice, setCartNotice] = useState('')
@@ -768,8 +802,10 @@ function App() {
       items: cart.map((item) => ({ ...item })),
       totalPrice: cart.reduce((total, item) => total + item.price * item.quantity, 0),
       status: 'در حال انجام',
+      conversationStatus: 'open',
       createdAt: now,
       messages: [],
+      additionalServices: [],
     }
     const nextOrders = [order, ...demoOrders]
     try {
@@ -789,24 +825,171 @@ function App() {
     return true
   }
 
-  const sendDemoMessage = (orderId: string, text: string, senderRole: 'user' | 'operator', attachment?: DemoAttachment) => {
-    const normalizedText = text.trim()
-    if (!normalizedText && !attachment) return
+  const updateDemoOrder = (orderId: string, update: (order: DemoOrder) => DemoOrder): boolean => {
+    if (!demoOrders.some((order) => order.id === orderId)) {
+      console.error(`Could not update missing demo order ${orderId}.`)
+      return false
+    }
 
-    const nextOrders = demoOrders.map((order) => order.id === orderId
-      ? {
-          ...order,
-          messages: [...order.messages, {
-            id: `message-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-            senderRole,
-            senderName: senderRole === 'user' ? demoUserName : demoOperators[0].fullName,
-            text: normalizedText,
-            createdAt: new Date().toISOString(),
-            ...(attachment ? { attachment } : {}),
-          }],
-        }
-      : order)
+    const nextOrders = demoOrders.map((order) => order.id === orderId ? update(order) : order)
+    try {
+      localStorage.setItem(demoOrdersStorageKey, JSON.stringify(nextOrders))
+    } catch (error) {
+      console.error('Could not save the updated demo order.', error)
+      return false
+    }
+
     setDemoOrders(nextOrders)
+    return true
+  }
+
+  const closeDemoConversation = (orderId: string): boolean => {
+    const order = demoOrders.find((item) => item.id === orderId)
+    if (!order) {
+      console.error(`Could not close missing demo conversation ${orderId}.`)
+      return false
+    }
+
+    if (order.conversationStatus === 'closed') return true
+
+    return updateDemoOrder(orderId, (currentOrder) => ({
+      ...currentOrder,
+      conversationStatus: 'closed',
+    }))
+  }
+
+  const cancelDemoOrder = (orderId: string): number | null => {
+    const order = demoOrders.find((item) => item.id === orderId)
+    if (!order || order.status !== 'در حال انجام') {
+      console.error(`Could not cancel inactive demo order ${orderId}.`)
+      return null
+    }
+
+    const cancellationFee = Math.round(order.totalPrice * 0.25)
+    const refundAmount = order.totalPrice - cancellationFee
+    if (!Number.isSafeInteger(cancellationFee) || !Number.isSafeInteger(refundAmount) || !Number.isSafeInteger(demoWalletBalance + refundAmount)) {
+      console.error('The demo order refund exceeds the supported range.')
+      return null
+    }
+
+    const saved = updateDemoOrder(orderId, (currentOrder) => ({
+      ...currentOrder,
+      status: 'لغو شده',
+      cancellationFee,
+      refundAmount,
+    }))
+    return saved ? refundAmount : null
+  }
+
+  const sendDemoMessage = (orderId: string, text: string, senderRole: 'user' | 'operator', attachment?: DemoAttachment): boolean => {
+    const normalizedText = text.trim()
+    if (!normalizedText && !attachment) return false
+
+    const order = demoOrders.find((item) => item.id === orderId)
+    if (senderRole === 'user' && order?.conversationStatus === 'closed') {
+      console.error(`Could not send a user message to closed demo conversation ${orderId}.`)
+      return false
+    }
+
+    return updateDemoOrder(orderId, (order) => ({
+      ...order,
+      messages: [...order.messages, {
+        id: `message-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+        senderRole,
+        senderName: senderRole === 'user' ? demoUserName : demoOperators[0].fullName,
+        text: normalizedText,
+        createdAt: new Date().toISOString(),
+        ...(attachment ? { attachment } : {}),
+      }],
+    }))
+  }
+
+  const offerDemoAdditionalService = (orderId: string, item: CartItem): boolean => {
+    if (!isCartItem(item)) {
+      console.error('Could not add an invalid service to the demo order.')
+      return false
+    }
+
+    if (!demoOrders.some((order) => order.id === orderId && order.status === 'در حال انجام')) {
+      console.error(`Could not add a service to inactive demo order ${orderId}.`)
+      return false
+    }
+
+    return updateDemoOrder(orderId, (order) => ({
+      ...order,
+      additionalServices: [...(order.additionalServices ?? []), {
+        id: `extra-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+        item: { ...item },
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+      }],
+    }))
+  }
+
+  const startDemoAdditionalServicePayment = (orderId: string, serviceId: string): boolean => {
+    const order = demoOrders.find((item) => item.id === orderId)
+    const service = order?.additionalServices?.find((item) => item.id === serviceId)
+    if (!order || order.status !== 'در حال انجام' || !service || (service.status !== 'pending' && service.status !== 'failed')) {
+      console.error(`Could not start the additional service payment for order ${orderId}.`)
+      return false
+    }
+
+    return updateDemoOrder(orderId, (currentOrder) => ({
+      ...currentOrder,
+      additionalServices: (currentOrder.additionalServices ?? []).map((item) => item.id === serviceId
+        ? { ...item, status: 'processing' }
+        : item),
+    }))
+  }
+
+  const completeDemoAdditionalServicePayment = (orderId: string, serviceId: string, successful: boolean): boolean => {
+    const order = demoOrders.find((item) => item.id === orderId)
+    const service = order?.additionalServices?.find((item) => item.id === serviceId)
+    if (!order || order.status !== 'در حال انجام' || !service || service.status !== 'processing') {
+      console.error(`Could not finish the additional service payment for order ${orderId}.`)
+      return false
+    }
+
+    if (!successful) {
+      return updateDemoOrder(orderId, (currentOrder) => ({
+        ...currentOrder,
+        additionalServices: (currentOrder.additionalServices ?? []).map((item) => item.id === serviceId
+          ? { ...item, status: 'failed' }
+          : item),
+      }))
+    }
+
+    const price = service.item.price * service.item.quantity
+    const totalPrice = order.totalPrice + price
+    if (!Number.isSafeInteger(price) || !Number.isSafeInteger(totalPrice)) {
+      console.error('The additional service price exceeds the supported range.')
+      return false
+    }
+
+    const existingItem = order.items.find((item) => item.serviceId === service.item.serviceId)
+    if (existingItem && !Number.isSafeInteger(existingItem.quantity + service.item.quantity)) {
+      console.error('The additional service quantity exceeds the supported range.')
+      return false
+    }
+
+    return updateDemoOrder(orderId, (currentOrder) => {
+      const currentItems = currentOrder.items
+      const currentItem = currentItems.find((item) => item.serviceId === service.item.serviceId)
+      const items = currentItem
+        ? currentItems.map((item) => item.serviceId === service.item.serviceId
+          ? { ...item, quantity: item.quantity + service.item.quantity }
+          : item)
+        : [...currentItems, { ...service.item }]
+
+      return {
+        ...currentOrder,
+        items,
+        totalPrice: currentOrder.totalPrice + price,
+        additionalServices: (currentOrder.additionalServices ?? []).map((item) => item.id === serviceId
+          ? { ...item, status: 'paid' }
+          : item),
+      }
+    })
   }
 
   const openEventService = (serviceId: string) => {
@@ -972,11 +1155,11 @@ function App() {
 
           <section className="dashboard">
             {activeNav !== 'خانه' && activeNav !== 'حساب کاربری' ? (
-              <SectionPage section={activeNav} role={role} events={events} catalog={catalog} onOpenService={openEventService} onOpenContact={openSupportConversations} />
+              <SectionPage section={activeNav} role={role} events={events} catalog={catalog} onOpenService={openEventService} onOpenContact={openSupportConversations} walletBalance={demoWalletBalance} />
             ) : activePage === 'داشبورد' ? (
-              <Dashboard role={role} range={range} setRange={setRange} search={search} setActivePage={setActivePage} setActiveNav={setActiveNav} />
+              <Dashboard role={role} range={range} setRange={setRange} search={search} setActivePage={setActivePage} setActiveNav={setActiveNav} walletBalance={demoWalletBalance} />
             ) : (
-              <PanelPage page={activePage} role={role} search={search} catalog={catalog} events={events} siteStyle={siteStyle} setSiteStyle={setSiteStyle} addCategory={addCategory} addService={addService} updateCategory={updateCategory} deleteCategory={deleteCategory} updateService={updateService} deleteService={deleteService} addEvent={addEvent} deleteEvent={deleteEvent} demoOrders={demoOrders} activeDemoOrderId={activeDemoOrderId} onOpenDemoOrder={setActiveDemoOrderId} onSendDemoMessage={sendDemoMessage} />
+              <PanelPage page={activePage} role={role} search={search} catalog={catalog} events={events} siteStyle={siteStyle} setSiteStyle={setSiteStyle} addCategory={addCategory} addService={addService} updateCategory={updateCategory} deleteCategory={deleteCategory} updateService={updateService} deleteService={deleteService} addEvent={addEvent} deleteEvent={deleteEvent} demoOrders={demoOrders} activeDemoOrderId={activeDemoOrderId} onOpenDemoOrder={setActiveDemoOrderId} onSendDemoMessage={sendDemoMessage} onOfferAdditionalService={offerDemoAdditionalService} onStartAdditionalServicePayment={startDemoAdditionalServicePayment} onCompleteAdditionalServicePayment={completeDemoAdditionalServicePayment} onCloseDemoConversation={closeDemoConversation} onCancelDemoOrder={cancelDemoOrder} walletBalance={demoWalletBalance} />
             )}
           </section>
         </div>
@@ -1009,6 +1192,7 @@ function Dashboard({
   search,
   setActivePage,
   setActiveNav,
+  walletBalance,
 }: {
   role: Role
   range: string
@@ -1016,6 +1200,7 @@ function Dashboard({
   search: string
   setActivePage: (page: string) => void
   setActiveNav: (nav: string) => void
+  walletBalance: number
 }) {
   const isAdmin = role === 'admin'
   const isOperator = role === 'operator'
@@ -1030,7 +1215,7 @@ function Dashboard({
         <button className="primary-button" onClick={() => setActiveNav('خدمات')}><Icon name="plus" size={17} /> {isOperator ? 'مشاهده گفتگوها' : isAdmin ? 'مدیریت کاربران' : 'ثبت سفارش جدید'}</button>
       </div>
       <div className="metric-grid">
-        <MetricCard title={isAdmin ? 'درآمد کل' : isOperator ? 'گفتگوهای امروز' : 'موجودی کیف پول'} value={isOperator ? '۱۲' : isAdmin ? '۸۴۲,۵۰۰,۰۰۰' : '۲۴,۸۰۰,۰۰۰'} unit={isOperator ? 'گفتگو' : 'ریال'} change="+۱۲.۸٪" icon={isOperator ? 'chat' : 'wallet'} tone="purple" note={isOperator ? '۳ گفتگوی جدید' : 'نسبت به ماه گذشته'} />
+        <MetricCard title={isAdmin ? 'درآمد کل' : isOperator ? 'گفتگوهای امروز' : 'موجودی کیف پول'} value={isOperator ? '۱۲' : isAdmin ? '۸۴۲,۵۰۰,۰۰۰' : new Intl.NumberFormat('fa-IR').format(walletBalance)} unit={isOperator ? 'گفتگو' : 'ریال'} change="+۱۲.۸٪" icon={isOperator ? 'chat' : 'wallet'} tone="purple" note={isOperator ? '۳ گفتگوی جدید' : 'نسبت به ماه گذشته'} />
         <MetricCard title={isAdmin ? 'کاربران فعال' : isOperator ? 'رضایت مشتریان' : 'سفارش‌های فعال'} value={isOperator ? '۹۸' : isAdmin ? '۱,۲۸۴' : '۳'} unit={isOperator ? '٪' : 'عدد'} change="+۸.۲٪" icon={isAdmin ? 'users' : isOperator ? 'sparkle' : 'receipt'} tone="mint" note={isOperator ? 'عالی پیش می‌ری!' : 'نسبت به ماه گذشته'} />
         <MetricCard title={isAdmin ? 'سفارش‌های امروز' : isOperator ? 'سفارش تکمیل‌شده' : 'سفارش‌های تکمیل‌شده'} value={isOperator ? '۲۸' : isAdmin ? '۳۶' : '۱۸'} unit="عدد" change="+۴.۵٪" icon="check" tone="orange" note="نسبت به ماه گذشته" />
         <MetricCard title={isAdmin ? 'اپراتورهای آنلاین' : isOperator ? 'میانگین پاسخ‌گویی' : 'امتیاز شما'} value={isOperator ? '۲' : isAdmin ? '۸' : '۴.۹'} unit={isOperator ? 'دقیقه' : isAdmin ? 'نفر' : 'از ۵'} change={isOperator ? '−۱.۲٪' : '+۰.۶٪'} icon={isOperator ? 'clock' : isAdmin ? 'support' : 'sparkle'} tone="blue" note={isOperator ? 'سریع‌تر از هفته قبل' : 'بر اساس بازخوردها'} />
@@ -1062,7 +1247,7 @@ function Dashboard({
           <div className="panel-heading"><div><h2>{isAdmin ? 'خلاصه کیف پول' : isOperator ? 'وضعیت امروز' : 'کیف پول من'}</h2><p>{isAdmin ? 'موجودی حساب پلتفرم' : isOperator ? 'گزارش فعالیت روزانه' : 'موجودی قابل استفاده'}</p></div><button className="more-button" aria-label="گزینه‌های بیشتر"><Icon name="more" /></button></div>
           <div className="balance-card">
             <div className="balance-top"><span>{isOperator ? 'گفتگوهای پاسخ‌داده‌شده' : 'موجودی فعلی'}</span><span className="balance-card-icon"><Icon name={isOperator ? 'chat' : 'wallet'} size={18} /></span></div>
-            <div className="balance-amount">{isOperator ? '۲۸' : isAdmin ? '۱۲۸,۴۰۰,۰۰۰' : '۲۴,۸۰۰,۰۰۰'} <small>{isOperator ? 'گفتگو' : 'ریال'}</small></div>
+            <div className="balance-amount">{isOperator ? '۲۸' : isAdmin ? '۱۲۸,۴۰۰,۰۰۰' : new Intl.NumberFormat('fa-IR').format(walletBalance)} <small>{isOperator ? 'گفتگو' : 'ریال'}</small></div>
             <div className="balance-footer"><span><i /> {isOperator ? '۴ گفتگوی تازه' : 'به‌روز در همین لحظه'}</span><Icon name="arrow" size={15} /></div>
           </div>
           <div className="balance-actions">
@@ -1885,6 +2070,7 @@ function CatalogManager({
 function SectionPage({
   section,
   role,
+  walletBalance,
   events = [],
   catalog,
   onOpenService,
@@ -1892,6 +2078,7 @@ function SectionPage({
 }: {
   section: string
   role: Role
+  walletBalance: number
   events?: AppEvent[]
   catalog?: ServiceCatalogData
   onOpenService?: (serviceId: string) => void
@@ -1932,7 +2119,7 @@ function SectionPage({
       </div>
       {isWallet ? (
         <div className="wallet-view">
-          <div className="wallet-highlight"><div><span>موجودی کیف پول شما</span><strong>۲۴,۸۰۰,۰۰۰ <small>ریال</small></strong><p><i /> آخرین به‌روزرسانی همین حالا</p></div><span className="wallet-art"><Icon name="wallet" size={35} /></span></div>
+          <div className="wallet-highlight"><div><span>موجودی کیف پول شما</span><strong>{new Intl.NumberFormat('fa-IR').format(walletBalance)} <small>ریال</small></strong><p><i /> آخرین به‌روزرسانی همین حالا</p></div><span className="wallet-art"><Icon name="wallet" size={35} /></span></div>
           <div className="wallet-quick"><button><Icon name="plus" /> افزایش موجودی</button><button><Icon name="receipt" /> همه تراکنش‌ها</button></div>
           <div className="panel wallet-transaction"><h2>تراکنش‌های اخیر</h2>{orders.map((order) => <div className="transaction-row" key={order.id}><span className={`service-icon ${order.tone}`}><Icon name="receipt" size={16} /></span><div><strong>{order.service}</strong><small>{order.date}</small></div><b>− {order.amount} <small>ریال</small></b></div>)}</div>
         </div>
@@ -2069,13 +2256,25 @@ function DemoConversationPage({
   activeOrder,
   onOpenOrder,
   onSendMessage,
+  catalog,
+  onOfferAdditionalService,
+  onStartAdditionalServicePayment,
+  onCompleteAdditionalServicePayment,
+  onCloseDemoConversation,
+  onCancelDemoOrder,
 }: {
   role: Role
   search: string
   orders: DemoOrder[]
   activeOrder: DemoOrder | null
   onOpenOrder: (orderId: string | null) => void
-  onSendMessage: (orderId: string, text: string, senderRole: 'user' | 'operator', attachment?: DemoAttachment) => void
+  onSendMessage: (orderId: string, text: string, senderRole: 'user' | 'operator', attachment?: DemoAttachment) => boolean
+  catalog: ServiceCatalogData
+  onOfferAdditionalService: (orderId: string, item: CartItem) => boolean
+  onStartAdditionalServicePayment: (orderId: string, serviceId: string) => boolean
+  onCompleteAdditionalServicePayment: (orderId: string, serviceId: string, successful: boolean) => boolean
+  onCloseDemoConversation: (orderId: string) => boolean
+  onCancelDemoOrder: (orderId: string) => number | null
 }) {
   const isOperatorView = role !== 'user'
   const filteredOrders = demoOrders.filter((order) => {
@@ -2094,15 +2293,22 @@ function DemoConversationPage({
           </div>
         ) : (
           <div className="demo-conversation-rows">
-            {filteredOrders.map((order) => (
-              <button type="button" className="demo-conversation-row" key={order.id} onClick={() => onOpenOrder(order.id)}>
+            {filteredOrders.map((order) => {
+              const isClosed = order.conversationStatus === 'closed'
+              const isDisabled = !isOperatorView && isClosed
+              return (
+              <button type="button" className={`demo-conversation-row ${isDisabled ? 'disabled' : ''}`} key={order.id} disabled={isDisabled} onClick={() => {
+                if (!isDisabled) onOpenOrder(order.id)
+              }}>
                 <span className="demo-conversation-copy">
                   <strong>{isOperatorView ? order.userName : order.operatorName}</strong>
                   <span>{order.items.map((item) => `${item.name} × ${new Intl.NumberFormat('fa-IR').format(item.quantity)}`).join('، ')}</span>
+                  {isClosed && <small className="demo-conversation-closed">گفتگو بسته شده</small>}
                 </span>
                 <Icon name="arrow" size={16} />
               </button>
-            ))}
+              )
+            })}
           </div>
         )}
       </section>
@@ -2111,8 +2317,14 @@ function DemoConversationPage({
           key={activeOrder.id}
           order={activeOrder}
           role={role}
+          catalog={catalog}
           onClose={() => onOpenOrder(null)}
           onSendMessage={onSendMessage}
+          onOfferAdditionalService={onOfferAdditionalService}
+          onStartAdditionalServicePayment={onStartAdditionalServicePayment}
+          onCompleteAdditionalServicePayment={onCompleteAdditionalServicePayment}
+          onCloseDemoConversation={onCloseDemoConversation}
+          onCancelDemoOrder={onCancelDemoOrder}
         />
       )}
     </>
@@ -2122,47 +2334,173 @@ function DemoConversationPage({
 function DemoChatDialog({
   order,
   role,
+  catalog,
   onClose,
   onSendMessage,
+  onOfferAdditionalService,
+  onStartAdditionalServicePayment,
+  onCompleteAdditionalServicePayment,
+  onCloseDemoConversation,
+  onCancelDemoOrder,
 }: {
   order: DemoOrder
   role: Role
+  catalog: ServiceCatalogData
   onClose: () => void
-  onSendMessage: (orderId: string, text: string, senderRole: 'user' | 'operator', attachment?: DemoAttachment) => void
+  onSendMessage: (orderId: string, text: string, senderRole: 'user' | 'operator', attachment?: DemoAttachment) => boolean
+  onOfferAdditionalService: (orderId: string, item: CartItem) => boolean
+  onStartAdditionalServicePayment: (orderId: string, serviceId: string) => boolean
+  onCompleteAdditionalServicePayment: (orderId: string, serviceId: string, successful: boolean) => boolean
+  onCloseDemoConversation: (orderId: string) => boolean
+  onCancelDemoOrder: (orderId: string) => number | null
 }) {
   const [draft, setDraft] = useState('')
+  const [composerError, setComposerError] = useState('')
+  const [operatorActionError, setOperatorActionError] = useState('')
+  const [operatorActionNotice, setOperatorActionNotice] = useState('')
+  const [paymentNotice, setPaymentNotice] = useState('')
+  const [servicePickerOpen, setServicePickerOpen] = useState(false)
+  const [cancellationWarningOpen, setCancellationWarningOpen] = useState(false)
+  const [cancellationNotice, setCancellationNotice] = useState('')
+  const [cancellationError, setCancellationError] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const operatorDocumentInputRef = useRef<HTMLInputElement>(null)
   const isOperatorView = role !== 'user'
   const senderRole = isOperatorView ? 'operator' : 'user'
   const formatPrice = (price: number) => new Intl.NumberFormat('fa-IR').format(price)
-  const attachments = order.messages.flatMap((message) => message.attachment ? [{ ...message.attachment, senderName: message.senderName }] : [])
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
+      if (event.key === 'Escape') {
+        if (cancellationWarningOpen) setCancellationWarningOpen(false)
+        else if (servicePickerOpen) setServicePickerOpen(false)
+        else onClose()
+      }
     }
     window.addEventListener('keydown', closeOnEscape)
     return () => window.removeEventListener('keydown', closeOnEscape)
-  }, [onClose])
+  }, [cancellationWarningOpen, onClose, servicePickerOpen])
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!draft.trim()) return
-    onSendMessage(order.id, draft, senderRole)
-    setDraft('')
+    if (onSendMessage(order.id, draft, senderRole)) {
+      setDraft('')
+      setComposerError('')
+    } else {
+      setComposerError('ارسال پیام انجام نشد. دوباره تلاش کنید.')
+    }
   }
 
   const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.currentTarget.files?.[0]
     if (!file) return
-    onSendMessage(order.id, '', senderRole, { name: file.name, type: file.type || 'application/octet-stream', size: file.size })
+    if (!onSendMessage(order.id, '', senderRole, { name: file.name, type: file.type || 'application/octet-stream', size: file.size })) {
+      setComposerError('ارسال پیوست انجام نشد. دوباره تلاش کنید.')
+    } else {
+      setComposerError('')
+    }
     event.currentTarget.value = ''
   }
 
-  const formatFileSize = (size: number) => {
-    if (size < 1024) return `${new Intl.NumberFormat('fa-IR').format(size)} بایت`
-    const kilobytes = size / 1024
-    return `${new Intl.NumberFormat('fa-IR', { maximumFractionDigits: 1 }).format(kilobytes)} کیلوبایت`
+  const handleOperatorDocumentChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0]
+    event.currentTarget.value = ''
+    if (!file) return
+
+    setOperatorActionError('')
+    setOperatorActionNotice('')
+    if (file.size > maxDemoDocumentSize) {
+      setOperatorActionError('حجم هر مدرک باید حداکثر ۲ مگابایت باشد.')
+      return
+    }
+
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result !== 'string') {
+        setOperatorActionError('خواندن فایل انجام نشد. دوباره تلاش کنید.')
+        return
+      }
+
+      const saved = onSendMessage(order.id, `${file.name} برای شما ارسال شد.`, 'operator', {
+        name: file.name,
+        type: file.type || 'application/octet-stream',
+        size: file.size,
+        dataUrl: reader.result,
+      })
+      if (saved) {
+        setOperatorActionNotice('مدرک در بخش دانلودهای کاربر قرار گرفت.')
+      } else {
+        setOperatorActionError('ذخیرهٔ مدرک انجام نشد؛ فضای ذخیره‌سازی مرورگر را بررسی کنید.')
+      }
+    }
+    reader.onerror = () => {
+      console.error('Could not read the operator document.', reader.error)
+      setOperatorActionError('خواندن فایل انجام نشد. دوباره تلاش کنید.')
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const handleOfferService = (service: CatalogService) => {
+    const categoryName = catalog.categories.find((category) => category.id === service.categoryId)?.name ?? 'خدمات'
+    const item: CartItem = {
+      serviceId: service.id,
+      categoryName,
+      name: service.name,
+      description: service.description,
+      price: service.price,
+      quantity: 1,
+    }
+    if (onOfferAdditionalService(order.id, item)) {
+      setServicePickerOpen(false)
+      setOperatorActionError('')
+      setOperatorActionNotice(`«${service.name}» برای پرداخت به چت اضافه شد.`)
+    } else {
+      setOperatorActionError('افزودن خدمت انجام نشد. دوباره تلاش کنید.')
+    }
+  }
+
+  const handleStartAdditionalServicePayment = (serviceId: string) => {
+    setPaymentNotice('')
+    if (onStartAdditionalServicePayment(order.id, serviceId)) {
+      setComposerError('')
+      setPaymentNotice('فرآیند پرداخت آغاز شد؛ نتیجهٔ پرداخت آزمایشی را انتخاب کنید.')
+    } else {
+      setComposerError('شروع پرداخت انجام نشد. دوباره تلاش کنید.')
+    }
+  }
+
+  const handleCompleteAdditionalServicePayment = (serviceId: string, successful: boolean) => {
+    setPaymentNotice('')
+    if (onCompleteAdditionalServicePayment(order.id, serviceId, successful)) {
+      setComposerError('')
+      setPaymentNotice(successful
+        ? 'پرداخت موفق بود؛ گفتگو را همین‌جا ادامه دهید.'
+        : 'پرداخت ناموفق بود. می‌توانید دوباره تلاش کنید.')
+    } else {
+      setComposerError('ثبت نتیجهٔ پرداخت انجام نشد. دوباره تلاش کنید.')
+    }
+  }
+
+  const handleCloseDemoConversation = () => {
+    setOperatorActionError('')
+    if (onCloseDemoConversation(order.id)) {
+      onClose()
+    } else {
+      setOperatorActionError('بستن گفتگو ثبت نشد. دوباره تلاش کنید.')
+    }
+  }
+
+  const handleConfirmDemoOrderCancellation = () => {
+    setCancellationError('')
+    const refundAmount = onCancelDemoOrder(order.id)
+    if (refundAmount === null) {
+      setCancellationError('انصراف از خدمت ثبت نشد. دوباره تلاش کنید.')
+      return
+    }
+
+    setCancellationWarningOpen(false)
+    setCancellationNotice(`انصراف ثبت شد؛ ${formatPrice(refundAmount)} ریال به کیف پول آزمایشی شما برگشت داده شد.`)
   }
 
   const displayName = isOperatorView ? order.userName : order.operatorName
@@ -2172,14 +2510,23 @@ function DemoChatDialog({
     <div className="demo-chat-backdrop" onMouseDown={(event) => {
       if (event.target === event.currentTarget) onClose()
     }}>
-      <section className="demo-chat-dialog" role="dialog" aria-modal="true" aria-labelledby="demo-chat-title" onMouseDown={(event) => event.stopPropagation()}>
+      <section className={`demo-chat-dialog ${isOperatorView ? 'operator-chat-layout' : ''}`} role="dialog" aria-modal="true" aria-labelledby="demo-chat-title" onMouseDown={(event) => event.stopPropagation()}>
         <aside className="demo-chat-sidebar">
-          <div className="demo-chat-sidebar-heading">
-            <span className="demo-sidebar-avatar">{displayInitial}</span>
-            <div><h2>جزئیات گفتگو</h2><p>{displayName}</p></div>
-          </div>
+          {isOperatorView && <header className="demo-sidebar-header">امکانات و جزئیات</header>}
+          {isOperatorView && (
+            <>
+              <input ref={operatorDocumentInputRef} className="demo-chat-file-input" type="file" aria-label="انتخاب مدرک برای مشتری" onChange={handleOperatorDocumentChange} />
+              <div className="demo-sidebar-actions">
+                <button type="button" onClick={() => operatorDocumentInputRef.current?.click()}><Icon name="paperclip" size={16} /> ارسال مدارک برای مشتری</button>
+                <button type="button" onClick={() => { setOperatorActionError(''); setOperatorActionNotice(''); setServicePickerOpen(true) }}><Icon name="plus" size={16} /> خدمات اضافه</button>
+              </div>
+              <small className="demo-sidebar-action-hint">حداکثر حجم هر مدرک: ۲ مگابایت</small>
+              {operatorActionError && <p className="demo-sidebar-action-error" role="alert">{operatorActionError}</p>}
+              {operatorActionNotice && <p className="demo-sidebar-action-notice" role="status">{operatorActionNotice}</p>}
+            </>
+          )}
           <section className="demo-sidebar-section">
-            <h3>خدمات سفارش</h3>
+            <h3>جزئیات سفارش</h3>
             <ul className="demo-sidebar-services">
               {order.items.map((item) => (
                 <li key={item.serviceId}>
@@ -2190,29 +2537,44 @@ function DemoChatDialog({
             </ul>
           </section>
           <section className="demo-sidebar-section">
-            <h3>اطلاعات سفارش</h3>
+            <h3>{isOperatorView ? 'مشخصات فرد' : 'اطلاعات سفارش'}</h3>
             <dl className="demo-sidebar-details">
-              <div><dt>کد سفارش</dt><dd>{order.id}</dd></div>
-              <div><dt>وضعیت</dt><dd>{order.status}</dd></div>
-              <div><dt>مبلغ</dt><dd>{formatPrice(order.totalPrice)} ریال</dd></div>
-              <div><dt>پرداخت</dt><dd>آزمایشی</dd></div>
+              {isOperatorView ? (
+                <>
+                  <div><dt>نام و نام خانوادگی</dt><dd>{order.userName}</dd></div>
+                  <div><dt>شماره همراه</dt><dd>{demoUserPhone}</dd></div>
+                  <div><dt>کد ملی</dt><dd>ثبت نشده</dd></div>
+                  <div><dt>تاریخ تولد</dt><dd>ثبت نشده</dd></div>
+                </>
+              ) : (
+                <>
+                  <div><dt>کد سفارش</dt><dd>{order.id}</dd></div>
+                  <div><dt>وضعیت</dt><dd>{order.status}</dd></div>
+                  <div><dt>وضعیت گفتگو</dt><dd>{order.conversationStatus === 'closed' ? 'بسته شده' : 'باز'}</dd></div>
+                  <div><dt>مبلغ</dt><dd>{formatPrice(order.totalPrice)} ریال</dd></div>
+                  <div><dt>پرداخت</dt><dd>آزمایشی</dd></div>
+                  {order.status === 'لغو شده' && (
+                    <>
+                      <div><dt>خسارت کسرشده</dt><dd>{formatPrice(order.cancellationFee ?? 0)} ریال</dd></div>
+                      <div><dt>بازگشت به کیف پول</dt><dd>{formatPrice(order.refundAmount ?? 0)} ریال</dd></div>
+                    </>
+                  )}
+                </>
+              )}
             </dl>
           </section>
-          <section className="demo-sidebar-section demo-sidebar-attachments">
-            <div className="demo-sidebar-section-title">
-              <h3>مدارک گفتگو</h3>
-              <span>{new Intl.NumberFormat('fa-IR').format(attachments.length)}</span>
-            </div>
-            {attachments.length === 0 ? (
-              <p className="demo-sidebar-empty">هنوز مدرکی ارسال نشده.</p>
-            ) : (
-              <ul>
-                {attachments.map((attachment, index) => <li key={`${attachment.name}-${index}`}><Icon name="paperclip" size={14} /><span>{attachment.name}</span></li>)}
-              </ul>
-            )}
-            <button type="button" className="demo-sidebar-attach-button" onClick={() => fileInputRef.current?.click()}><Icon name="paperclip" size={15} /> افزودن مدرک</button>
-          </section>
-          <p className="demo-sidebar-disclaimer">نمایش و ارسال مدارک در این نسخه آزمایشی است؛ فایل واقعی بارگذاری نمی‌شود.</p>
+          {role === 'user' && order.status === 'در حال انجام' && (
+            <button type="button" className="demo-sidebar-cancel" onClick={() => {
+              setCancellationError('')
+              setCancellationWarningOpen(true)
+            }}>انصراف از خدمت</button>
+          )}
+          {role === 'operator' && order.conversationStatus !== 'closed' && (
+            <button type="button" className="demo-sidebar-complete" onClick={handleCloseDemoConversation}>اتمام خدمت و بستن</button>
+          )}
+          {isOperatorView && order.conversationStatus === 'closed' && (
+            <p className="demo-sidebar-closed">گفتگو بسته شده</p>
+          )}
         </aside>
         <div className="demo-chat-main">
           <header className="demo-chat-header">
@@ -2220,7 +2582,6 @@ function DemoChatDialog({
               <span className="demo-chat-avatar">{displayInitial}</span>
               <div><h2 id="demo-chat-title">{displayName}</h2><p>{isOperatorView ? 'گفتگوی کاربر' : 'اپراتور خدمات'}</p></div>
             </div>
-            <span className="demo-chat-order-tag">{order.id}</span>
             <button type="button" className="demo-chat-close" aria-label="بستن گفتگو" onClick={onClose}><Icon name="close" size={19} /></button>
           </header>
           <div className="demo-chat-message-area" aria-live="polite">
@@ -2233,14 +2594,54 @@ function DemoChatDialog({
                 {message.attachment && (
                   <div className="demo-chat-file">
                     <span><Icon name="receipt" size={19} /></span>
-                    <div><b>{message.attachment.name}</b><small>{formatFileSize(message.attachment.size)} · پیوست آزمایشی</small></div>
+                    <div><b>{message.attachment.name}</b><small>{formatDemoFileSize(message.attachment.size)} · پیوست آزمایشی</small></div>
                   </div>
                 )}
                 {message.text && <p>{message.text}</p>}
                 <time dateTime={message.createdAt}>{new Intl.DateTimeFormat('fa-IR', { hour: '2-digit', minute: '2-digit' }).format(new Date(message.createdAt))}</time>
               </article>
             ))}
+            {paymentNotice && <p className="demo-chat-action-notice" role="status">{paymentNotice}</p>}
+            {composerError && <p className="demo-chat-action-error" role="alert">{composerError}</p>}
+            {cancellationNotice && <p className="demo-chat-action-notice" role="status">{cancellationNotice}</p>}
           </div>
+          {(order.additionalServices ?? []).length > 0 && (
+            <section className="demo-chat-service-area" aria-label="خدمات اضافه">
+              {(order.additionalServices ?? []).map((service) => (
+                <article className="demo-chat-service-offer" key={service.id}>
+                  <div>
+                    <strong>{service.item.name}</strong>
+                    <span>{service.item.categoryName} · {formatPrice(service.item.price * service.item.quantity)} ریال</span>
+                  </div>
+                  {(isOperatorView || (order.status === 'در حال انجام' && service.status !== 'paid')) && (
+                    <div className="demo-chat-service-controls">
+                      {isOperatorView && (
+                        <span className={`demo-chat-service-status ${service.status}`}>وضعیت: {service.status === 'pending'
+                          ? 'منتظر پرداخت'
+                          : service.status === 'processing'
+                            ? 'در حال انجام'
+                            : service.status === 'paid'
+                              ? 'پرداخت شد'
+                              : 'پرداخت ناموفق'}</span>
+                      )}
+                      {!isOperatorView && service.status === 'pending' && (
+                        <button type="button" onClick={() => handleStartAdditionalServicePayment(service.id)}>پرداخت</button>
+                      )}
+                      {!isOperatorView && service.status === 'processing' && (
+                        <div className="demo-chat-payment-actions">
+                          <button type="button" onClick={() => handleCompleteAdditionalServicePayment(service.id, true)}>پرداخت موفق (آزمایشی)</button>
+                          <button type="button" className="failed" onClick={() => handleCompleteAdditionalServicePayment(service.id, false)}>پرداخت ناموفق (آزمایشی)</button>
+                        </div>
+                      )}
+                      {!isOperatorView && service.status === 'failed' && (
+                        <button type="button" onClick={() => handleStartAdditionalServicePayment(service.id)}>تلاش مجدد</button>
+                      )}
+                    </div>
+                  )}
+                </article>
+              ))}
+            </section>
+          )}
           <form className="demo-chat-composer" onSubmit={handleSubmit}>
             <input ref={fileInputRef} className="demo-chat-file-input" type="file" aria-label="انتخاب مدرک" onChange={handleFileChange} />
             <button type="button" className="demo-chat-attach" aria-label="پیوست مدرک" title="پیوست مدرک" onClick={() => fileInputRef.current?.click()}><Icon name="paperclip" size={20} /></button>
@@ -2248,6 +2649,46 @@ function DemoChatDialog({
             <button className="demo-chat-send" type="submit" disabled={!draft.trim()} aria-label="ارسال پیام"><Icon name="arrow" size={17} /></button>
           </form>
         </div>
+        {servicePickerOpen && (
+          <div className="demo-service-picker-backdrop" onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setServicePickerOpen(false)
+          }}>
+            <section className="demo-service-picker" role="dialog" aria-modal="true" aria-labelledby="demo-service-picker-title" onMouseDown={(event) => event.stopPropagation()}>
+              <header>
+                <h2 id="demo-service-picker-title">افزودن خدمات به گفتگو</h2>
+                <button type="button" aria-label="بستن فهرست خدمات" onClick={() => setServicePickerOpen(false)}><Icon name="close" size={18} /></button>
+              </header>
+              {catalog.services.length === 0 ? (
+                <p className="demo-service-picker-empty">خدمتی برای افزودن وجود ندارد.</p>
+              ) : (
+                <div className="demo-service-picker-list">
+                  {catalog.services.map((service) => (
+                    <article key={service.id}>
+                      <div><strong>{service.name}</strong><small>{catalog.categories.find((category) => category.id === service.categoryId)?.name ?? 'خدمات'}</small><p>{service.description}</p></div>
+                      <strong>{formatPrice(service.price)} ریال</strong>
+                      <button type="button" onClick={() => handleOfferService(service)}>افزودن به گفتگو</button>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
+          </div>
+        )}
+        {cancellationWarningOpen && (
+          <div className="demo-cancel-warning-backdrop" onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setCancellationWarningOpen(false)
+          }}>
+            <section className="demo-cancel-warning" role="alertdialog" aria-modal="true" aria-labelledby="demo-cancel-warning-title" aria-describedby="demo-cancel-warning-message" onMouseDown={(event) => event.stopPropagation()}>
+              <h2 id="demo-cancel-warning-title">هشدار انصراف از خدمت</h2>
+              <p id="demo-cancel-warning-message">در صورت انصراف از خدمت، ۲۵٪ از مبلغ پرداختی بابت خسارت کسر می‌شود و مابقی وجه به کیف پول شما بازگردانده خواهد شد.</p>
+              {cancellationError && <p className="demo-chat-action-error" role="alert">{cancellationError}</p>}
+              <div>
+                <button type="button" className="demo-cancel-continue" autoFocus onClick={() => setCancellationWarningOpen(false)}>ادامه می‌دم</button>
+                <button type="button" className="demo-cancel-confirm" onClick={handleConfirmDemoOrderCancellation}>انصراف از انجام</button>
+              </div>
+            </section>
+          </div>
+        )}
       </section>
     </div>
   )
@@ -2273,6 +2714,12 @@ function PanelPage({
   activeDemoOrderId,
   onOpenDemoOrder,
   onSendDemoMessage,
+  onOfferAdditionalService,
+  onStartAdditionalServicePayment,
+  onCompleteAdditionalServicePayment,
+  onCloseDemoConversation,
+  onCancelDemoOrder,
+  walletBalance,
 }: {
   page: string
   role: Role
@@ -2292,7 +2739,13 @@ function PanelPage({
   demoOrders: DemoOrder[]
   activeDemoOrderId: string | null
   onOpenDemoOrder: (orderId: string | null) => void
-  onSendDemoMessage: (orderId: string, text: string, senderRole: 'user' | 'operator', attachment?: DemoAttachment) => void
+  onSendDemoMessage: (orderId: string, text: string, senderRole: 'user' | 'operator', attachment?: DemoAttachment) => boolean
+  onOfferAdditionalService: (orderId: string, item: CartItem) => boolean
+  onStartAdditionalServicePayment: (orderId: string, serviceId: string) => boolean
+  onCompleteAdditionalServicePayment: (orderId: string, serviceId: string, successful: boolean) => boolean
+  onCloseDemoConversation: (orderId: string) => boolean
+  onCancelDemoOrder: (orderId: string) => number | null
+  walletBalance: number
 }) {
   const [adminSettingsSection, setAdminSettingsSection] = useState<AdminSettingsSection>('profile')
   const [adminUsers, setAdminUsers] = useState(() => loadAdminPeople(adminUsersStorageKey, 'admin users'))
@@ -2328,7 +2781,20 @@ function PanelPage({
     : role === 'user'
       ? order.userId === demoUserId
       : true)
-  const activeDemoOrder = visibleDemoOrders.find((order) => order.id === activeDemoOrderId) ?? null
+  const downloadableDemoFiles = role === 'user'
+    ? demoOrders.flatMap((order) => order.userId === demoUserId
+      ? order.messages.flatMap((message) => {
+          const attachment = message.attachment
+          return message.senderRole === 'operator' && attachment?.dataUrl
+            ? [{ id: message.id, orderId: order.id, name: attachment.name, size: attachment.size, dataUrl: attachment.dataUrl }]
+            : []
+        })
+      : [])
+    : []
+  const selectedDemoOrder = visibleDemoOrders.find((order) => order.id === activeDemoOrderId) ?? null
+  const activeDemoOrder = role === 'user' && selectedDemoOrder?.conversationStatus === 'closed'
+    ? null
+    : selectedDemoOrder
   const matchingAdminPeople = adminPeople.filter((person) => `${person.fullName} ${person.phone} ${person.nationalCode}`.includes(search.trim()))
   const persistAdminPeople = (nextPeople: AdminUser[], errorMessage: string): boolean => {
     try {
@@ -2412,7 +2878,7 @@ function PanelPage({
       ) : page === 'تنظیمات ظاهری' ? (
         <AppearanceSettings siteStyle={siteStyle} setSiteStyle={setSiteStyle} />
       ) : page === 'کیف پول' ? (
-        <SectionPage section="کیف پول" role={role} />
+        <SectionPage section="کیف پول" role={role} walletBalance={walletBalance} />
       ) : page === 'گفتگوها' ? (
         <DemoConversationPage
           role={role}
@@ -2421,6 +2887,12 @@ function PanelPage({
           activeOrder={activeDemoOrder}
           onOpenOrder={onOpenDemoOrder}
           onSendMessage={onSendDemoMessage}
+          catalog={catalog}
+          onOfferAdditionalService={onOfferAdditionalService}
+          onStartAdditionalServicePayment={onStartAdditionalServicePayment}
+          onCompleteAdditionalServicePayment={onCompleteAdditionalServicePayment}
+          onCloseDemoConversation={onCloseDemoConversation}
+          onCancelDemoOrder={onCancelDemoOrder}
         />
       ) : isAdminPeoplePage ? (
         <section className="panel orders-panel panel-list admin-people-panel">
@@ -2485,13 +2957,27 @@ function PanelPage({
       ) : page === 'دانلودها' ? (
         <section className="panel downloads-panel">
           <div className="panel-heading">
-            <div><h2>فایل‌های قابل دانلود</h2><p>فایل‌های آمادهٔ سفارش‌های تکمیل‌شدهٔ شما</p></div>
+            <div><h2>فایل‌های قابل دانلود</h2><p>مدارک ارسال‌شده برای سفارش‌های شما</p></div>
           </div>
-          <div className="downloads-empty">
-            <span className="downloads-empty-icon"><Icon name="download" size={24} /></span>
-            <h3>هنوز فایلی برای دانلود نداری</h3>
-            <p>وقتی فایل‌های سفارش‌هایت آماده شوند، لینک دانلودشان در این بخش نمایش داده می‌شود.</p>
-          </div>
+          {downloadableDemoFiles.length === 0 ? (
+            <div className="downloads-empty">
+              <span className="downloads-empty-icon"><Icon name="download" size={24} /></span>
+              <h3>هنوز فایلی برای دانلود نداری</h3>
+              <p>مدارکی که اپراتور برایت می‌فرستد، در این بخش قرار می‌گیرند.</p>
+            </div>
+          ) : (
+            <div className="demo-download-list">
+              {downloadableDemoFiles.map((file) => (
+                <article className="demo-download-card" key={file.id}>
+                  <div className="demo-download-copy">
+                    <span className="downloads-empty-icon"><Icon name="receipt" size={19} /></span>
+                    <div><strong>{file.name}</strong><small>سفارش {file.orderId} · {formatDemoFileSize(file.size)}</small></div>
+                  </div>
+                  <a className="demo-download-button" href={file.dataUrl} download={file.name}><Icon name="download" size={16} /> دانلود</a>
+                </article>
+              ))}
+            </div>
+          )}
         </section>
       ) : (
         <section className="panel orders-panel panel-list">
@@ -2712,7 +3198,7 @@ function ProfileSettings({ role }: { role: Role }) {
         <div><strong>{displayName}</strong><small>عضو از آبان ۱۴۰۳</small></div>
         <button className="text-button">ویرایش تصویر</button>
       </div>
-      {[['نام و نام خانوادگی', 'نگار محمدی'], ['ایمیل', 'negar@email.com'], ['شماره همراه', '۰۹۱۲ ۳۴۵ ۶۷۸۹']].map(([label, value]) => (
+      {[['نام و نام خانوادگی', demoUserName], ['ایمیل', 'negar@email.com'], ['شماره همراه', demoUserPhone]].map(([label, value]) => (
         <label className="settings-field" key={label}><span>{label}</span><input defaultValue={value} /></label>
       ))}
       <button className="primary-button settings-save">ذخیره تغییرات</button>
