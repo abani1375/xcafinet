@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent, type ForwardRefExoticComponent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent, type ForwardRefExoticComponent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import DatePickerModule, { type CalendarProps, type DatePickerProps } from 'react-multi-date-picker'
 import persian from 'react-date-object/calendars/persian'
 import persianFa from 'react-date-object/locales/persian_fa'
@@ -29,13 +29,38 @@ type CatalogCategory = { id: string; name: string; description: string; icon?: s
 type CatalogService = { id: string; categoryId: string; name: string; description: string; price: number; icon?: string }
 type ServiceCatalogData = { categories: CatalogCategory[]; services: CatalogService[] }
 type CartItem = { serviceId: string; categoryName: string; name: string; description: string; price: number; quantity: number }
+type DemoAttachment = { name: string; type: string; size: number }
+type DemoMessage = { id: string; senderRole: 'user' | 'operator'; senderName: string; text: string; createdAt: string; attachment?: DemoAttachment }
+type DemoOrder = {
+  id: string
+  userId: string
+  userName: string
+  operatorId: string
+  operatorName: string
+  items: CartItem[]
+  totalPrice: number
+  status: string
+  createdAt: string
+  messages: DemoMessage[]
+}
 type AppEvent = { id: string; title: string; startDate: string; endDate: string; categoryId?: string; serviceId?: string }
+type AdminUserGender = 'female' | 'male' | 'undisclosed'
+type AdminUser = { id: string; fullName: string; phone: string; nationalCode: string; birthDate?: string; gender?: AdminUserGender; isOnline: boolean }
+type StoredAdminUser = Omit<AdminUser, 'isOnline'> & { isOnline?: boolean }
+type NewAdminUser = Omit<AdminUser, 'id' | 'isOnline'>
 
 const catalogStorageKey = 'xcafinet-service-catalog-rial'
 const legacyCatalogStorageKey = 'xcafinet-service-catalog'
 const cartStorageKey = 'xcafinet-cart-rial'
 const legacyCartStorageKey = 'xcafinet-cart'
 const eventsStorageKey = 'xcafinet-events'
+const adminUsersStorageKey = 'xcafinet-admin-users'
+const adminOperatorsStorageKey = 'xcafinet-admin-operators'
+const demoOrdersStorageKey = 'xcafinet-demo-orders'
+const demoUserId = 'demo-user-negar'
+const demoUserName = 'نگار محمدی'
+const demoOperators = [{ id: 'demo-operator-sara', fullName: 'سارا احمدی', isAvailable: true }]
+const maxBirthDate = new Date()
 const themeStorageKey = 'xcafinet-theme'
 const siteStyleStorageKey = 'xcafinet-site-style'
 const defaultCatalog: ServiceCatalogData = {
@@ -127,6 +152,53 @@ function isDateOnly(value: unknown): value is string {
   if (year < 1000) return false
   const date = new Date(Date.UTC(year, month - 1, day))
   return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+}
+
+function normalizeDigits(value: string): string {
+  return value
+    .replace(/[۰-۹]/g, (digit) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)))
+    .replace(/[٠-٩]/g, (digit) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)))
+}
+
+function toPersianDigits(value: string): string {
+  return value.replace(/[0-9]/g, (digit) => '۰۱۲۳۴۵۶۷۸۹'[Number(digit)])
+}
+
+function isAdminUser(value: unknown): value is StoredAdminUser {
+  return typeof value === 'object'
+    && value !== null
+    && 'id' in value
+    && 'fullName' in value
+    && 'phone' in value
+    && 'nationalCode' in value
+    && typeof value.id === 'string'
+    && typeof value.fullName === 'string'
+    && value.fullName.trim().length > 0
+    && typeof value.phone === 'string'
+    && value.phone.trim().length > 0
+    && typeof value.nationalCode === 'string'
+    && /^\d{10}$/.test(normalizeDigits(value.nationalCode))
+    && (!('birthDate' in value) || value.birthDate === undefined || isDateOnly(value.birthDate))
+    && (!('gender' in value) || value.gender === undefined || value.gender === 'female' || value.gender === 'male' || value.gender === 'undisclosed')
+    && (!('isOnline' in value) || typeof value.isOnline === 'boolean')
+}
+
+function loadAdminPeople(storageKey: string, storageLabel: string): AdminUser[] {
+  try {
+    const stored = localStorage.getItem(storageKey)
+    if (stored === null) return []
+
+    const parsed: unknown = JSON.parse(stored)
+    if (Array.isArray(parsed) && parsed.every(isAdminUser)) {
+      return parsed.map((user) => ({ ...user, isOnline: false }))
+    }
+
+    console.error(`Stored ${storageLabel} have an invalid format; starting with an empty list.`)
+  } catch (error) {
+    console.error(`Could not load the saved ${storageLabel}.`, error)
+  }
+
+  return []
 }
 
 function isAppEvent(value: unknown): value is AppEvent {
@@ -239,12 +311,94 @@ function loadCart(): CartItem[] {
   return []
 }
 
+function isDemoMessage(value: unknown): value is DemoMessage {
+  return typeof value === 'object'
+    && value !== null
+    && 'id' in value
+    && 'senderRole' in value
+    && 'senderName' in value
+    && 'text' in value
+    && 'createdAt' in value
+    && typeof value.id === 'string'
+    && (value.senderRole === 'user' || value.senderRole === 'operator')
+    && typeof value.senderName === 'string'
+    && typeof value.text === 'string'
+    && (value.text.trim().length > 0 || ('attachment' in value && isDemoAttachment(value.attachment)))
+    && typeof value.createdAt === 'string'
+    && !Number.isNaN(Date.parse(value.createdAt))
+    && (!('attachment' in value) || value.attachment === undefined || isDemoAttachment(value.attachment))
+}
+
+function isDemoAttachment(value: unknown): value is DemoAttachment {
+  return typeof value === 'object'
+    && value !== null
+    && 'name' in value
+    && 'type' in value
+    && 'size' in value
+    && typeof value.name === 'string'
+    && typeof value.type === 'string'
+    && typeof value.size === 'number'
+    && Number.isSafeInteger(value.size)
+    && value.size >= 0
+}
+
+function isDemoOrder(value: unknown): value is DemoOrder {
+  return typeof value === 'object'
+    && value !== null
+    && 'id' in value
+    && 'userId' in value
+    && 'userName' in value
+    && 'operatorId' in value
+    && 'operatorName' in value
+    && 'items' in value
+    && 'totalPrice' in value
+    && 'status' in value
+    && 'createdAt' in value
+    && 'messages' in value
+    && typeof value.id === 'string'
+    && typeof value.userId === 'string'
+    && typeof value.userName === 'string'
+    && typeof value.operatorId === 'string'
+    && typeof value.operatorName === 'string'
+    && Array.isArray(value.items)
+    && value.items.length > 0
+    && value.items.every(isCartItem)
+    && typeof value.totalPrice === 'number'
+    && Number.isSafeInteger(value.totalPrice)
+    && value.totalPrice > 0
+    && typeof value.status === 'string'
+    && typeof value.createdAt === 'string'
+    && !Number.isNaN(Date.parse(value.createdAt))
+    && Array.isArray(value.messages)
+    && value.messages.every(isDemoMessage)
+}
+
+function loadDemoOrders(): DemoOrder[] {
+  try {
+    const stored = localStorage.getItem(demoOrdersStorageKey)
+    if (stored === null) return []
+
+    const parsed: unknown = JSON.parse(stored)
+    if (Array.isArray(parsed) && parsed.every(isDemoOrder)) return parsed
+
+    console.error('Stored demo orders have an invalid format; starting with an empty list.')
+  } catch (error) {
+    console.error('Could not load the saved demo orders.', error)
+  }
+
+  return []
+}
+
 function createCatalogId(type: 'category' | 'service') {
   return `${type}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
 }
 
 function createEventId() {
   return `event-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+function createAdminUserId() {
+  return `user-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
 }
 
 function createCatalogIcon(file: File): Promise<string> {
@@ -329,6 +483,8 @@ type IconName =
   | 'download'
   | 'moon'
   | 'sun'
+  | 'paperclip'
+  | 'close'
 
 const iconPaths: Record<IconName, ReactNode> = {
   home: <><path d="m3 10 9-7 9 7" /><path d="M5 9v11h14V9M9 20v-7h6v7" /></>,
@@ -357,6 +513,8 @@ const iconPaths: Record<IconName, ReactNode> = {
   download: <><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="m7 10 5 5 5-5M12 15V3" /></>,
   moon: <><path d="M20.9 13A9 9 0 0 1 11 3.1 9 9 0 1 0 20.9 13Z" /></>,
   sun: <><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42" /></>,
+  paperclip: <><path d="m8 12.5 6.8-6.8a3.2 3.2 0 0 1 4.5 4.5l-8.5 8.5a5 5 0 0 1-7.1-7.1l8.2-8.2" /></>,
+  close: <><path d="m18 6-12 12M6 6l12 12" /></>,
 }
 
 function Icon({ name, size = 20, className = '' }: { name: IconName; size?: number; className?: string }) {
@@ -430,6 +588,8 @@ function App() {
   const [catalog, setCatalog] = useState(loadServiceCatalog)
   const [events, setEvents] = useState(loadEvents)
   const [cart, setCart] = useState(loadCart)
+  const [demoOrders, setDemoOrders] = useState(loadDemoOrders)
+  const [activeDemoOrderId, setActiveDemoOrderId] = useState<string | null>(null)
   const [requestedServiceId, setRequestedServiceId] = useState<string | null>(null)
   const [cartNotice, setCartNotice] = useState('')
   const [activePage, setActivePage] = useState('داشبورد')
@@ -465,6 +625,14 @@ function App() {
       console.error('Could not save the shopping cart.', error)
     }
   }, [cart])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(demoOrdersStorageKey, JSON.stringify(demoOrders))
+    } catch (error) {
+      console.error('Could not save the demo orders.', error)
+    }
+  }, [demoOrders])
 
   useEffect(() => {
     try {
@@ -585,6 +753,62 @@ function App() {
     setCart((current) => current.filter((item) => item.serviceId !== serviceId))
   }
 
+  const completeDemoPayment = () => {
+    if (cart.length === 0) return false
+    const assignedOperator = demoOperators.find((operator) => operator.isAvailable)
+    if (!assignedOperator) return false
+
+    const now = new Date().toISOString()
+    const order: DemoOrder = {
+      id: `XC-${Date.now().toString(36).toUpperCase()}`,
+      userId: demoUserId,
+      userName: demoUserName,
+      operatorId: assignedOperator.id,
+      operatorName: assignedOperator.fullName,
+      items: cart.map((item) => ({ ...item })),
+      totalPrice: cart.reduce((total, item) => total + item.price * item.quantity, 0),
+      status: 'در حال انجام',
+      createdAt: now,
+      messages: [],
+    }
+    const nextOrders = [order, ...demoOrders]
+    try {
+      localStorage.setItem(demoOrdersStorageKey, JSON.stringify(nextOrders))
+    } catch (error) {
+      console.error('Could not save the demo order.', error)
+      setCartNotice('ثبت سفارش آزمایشی انجام نشد. فضای ذخیره‌سازی مرورگر را بررسی کنید.')
+      return false
+    }
+
+    setDemoOrders(nextOrders)
+    setCart([])
+    setRole('user')
+    setActiveDemoOrderId(order.id)
+    setActivePage('گفتگوها')
+    setActiveNav('حساب کاربری')
+    return true
+  }
+
+  const sendDemoMessage = (orderId: string, text: string, senderRole: 'user' | 'operator', attachment?: DemoAttachment) => {
+    const normalizedText = text.trim()
+    if (!normalizedText && !attachment) return
+
+    const nextOrders = demoOrders.map((order) => order.id === orderId
+      ? {
+          ...order,
+          messages: [...order.messages, {
+            id: `message-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+            senderRole,
+            senderName: senderRole === 'user' ? demoUserName : demoOperators[0].fullName,
+            text: normalizedText,
+            createdAt: new Date().toISOString(),
+            ...(attachment ? { attachment } : {}),
+          }],
+        }
+      : order)
+    setDemoOrders(nextOrders)
+  }
+
   const openEventService = (serviceId: string) => {
     setRequestedServiceId(serviceId)
     setServiceView('all')
@@ -596,6 +820,7 @@ function App() {
     setRole(nextRole)
     setActivePage('داشبورد')
     setActiveNav('حساب کاربری')
+    setActiveDemoOrderId(null)
   }
 
   const openSupportConversations = () => {
@@ -614,6 +839,11 @@ function App() {
   const isEmptyCart = isCart && cart.length === 0
   const isSidebarlessPage = ['رویدادها', 'درباره ما', 'تماس با ما'].includes(activeNav)
   const cartCount = cart.reduce((total, item) => total + item.quantity, 0)
+  const conversationCount = demoOrders.filter((order) => role === 'operator'
+    ? order.operatorId === demoOperators[0].id
+    : role === 'user'
+      ? order.userId === demoUserId
+      : true).length
   const supportMenuItems = (
     <>
       <button type="button" role="menuitem" onClick={openSupportConversations}><Icon name="sparkle" size={17} /> دستیار هوش مصنوعی</button>
@@ -699,7 +929,7 @@ function App() {
       ) : isCart ? (
         <main className="cart-main page-wrap">
           <div className="breadcrumb"><span>ایکس‌کافه</span><b>/</b><strong>سبد خرید</strong></div>
-          <CartPage items={cart} onChangeQuantity={changeCartQuantity} onRemove={removeFromCart} onBrowse={() => { setCartNotice(''); setActiveNav('خدمات') }} />
+          <CartPage items={cart} onChangeQuantity={changeCartQuantity} onRemove={removeFromCart} onBrowse={() => { setCartNotice(''); setActiveNav('خدمات') }} onDemoPayment={completeDemoPayment} />
         </main>
       ) : <main className="page-wrap">
         <div className="breadcrumb"><span>ایکس‌کافه</span><b>/</b><span>{activeNav}</span><b>/</b><strong>{contentTitle}</strong></div>
@@ -724,7 +954,7 @@ function App() {
                 <button key={item.label} className={`side-link ${activePage === item.label && activeNav === 'حساب کاربری' ? 'active' : ''}`} onClick={() => { setActivePage(item.label); setActiveNav('حساب کاربری') }}>
                   <Icon name={item.icon} size={18} />
                   <span>{item.label}</span>
-                  {item.label === 'گفتگوها' && <span className="side-count">۳</span>}
+                  {item.label === 'گفتگوها' && conversationCount > 0 && <span className="side-count">{new Intl.NumberFormat('fa-IR').format(conversationCount)}</span>}
                 </button>
               ))}
             </nav>
@@ -746,7 +976,7 @@ function App() {
             ) : activePage === 'داشبورد' ? (
               <Dashboard role={role} range={range} setRange={setRange} search={search} setActivePage={setActivePage} setActiveNav={setActiveNav} />
             ) : (
-              <PanelPage page={activePage} role={role} search={search} catalog={catalog} events={events} siteStyle={siteStyle} setSiteStyle={setSiteStyle} addCategory={addCategory} addService={addService} updateCategory={updateCategory} deleteCategory={deleteCategory} updateService={updateService} deleteService={deleteService} addEvent={addEvent} deleteEvent={deleteEvent} />
+              <PanelPage page={activePage} role={role} search={search} catalog={catalog} events={events} siteStyle={siteStyle} setSiteStyle={setSiteStyle} addCategory={addCategory} addService={addService} updateCategory={updateCategory} deleteCategory={deleteCategory} updateService={updateService} deleteService={deleteService} addEvent={addEvent} deleteEvent={deleteEvent} demoOrders={demoOrders} activeDemoOrderId={activeDemoOrderId} onOpenDemoOrder={setActiveDemoOrderId} onSendDemoMessage={sendDemoMessage} />
             )}
           </section>
         </div>
@@ -1071,12 +1301,16 @@ function CartPage({
   onChangeQuantity,
   onRemove,
   onBrowse,
+  onDemoPayment,
 }: {
   items: CartItem[]
   onChangeQuantity: (serviceId: string, change: number) => void
   onRemove: (serviceId: string) => void
   onBrowse: () => void
+  onDemoPayment: () => boolean
 }) {
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false)
+  const [paymentError, setPaymentError] = useState('')
   const totalQuantity = items.reduce((total, item) => total + item.quantity, 0)
   const totalPrice = items.reduce((total, item) => total + item.price * item.quantity, 0)
   const formatPrice = (price: number) => new Intl.NumberFormat('fa-IR').format(price)
@@ -1126,9 +1360,28 @@ function CartPage({
             <h2>خلاصه سفارش</h2>
             <div><span>تعداد خدمات</span><strong>{new Intl.NumberFormat('fa-IR').format(totalQuantity)}</strong></div>
             <div className="cart-total"><span>مبلغ کل</span><strong>{formatPrice(totalPrice)} <small>ریال</small></strong></div>
-            <p>هزینه نهایی پس از تأیید سفارش مشخص می‌شود.</p>
-            <button className="primary-button" onClick={onBrowse}>ادامه انتخاب خدمات <Icon name="arrow" size={15} /></button>
+            <p>این پرداخت فقط برای آزمایش مسیر سفارش است و هیچ پولی جابه‌جا نمی‌شود.</p>
+            <button className="primary-button cart-pay-button" type="button" onClick={() => setPaymentDialogOpen(true)}><Icon name="wallet" size={16} /> پرداخت</button>
           </aside>
+        </div>
+      )}
+      {paymentDialogOpen && (
+        <div className="category-dialog-backdrop user-dialog-backdrop" onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setPaymentDialogOpen(false)
+        }}>
+          <section className="category-delete-dialog payment-unavailable-dialog" role="dialog" aria-modal="true" aria-labelledby="payment-unavailable-title">
+            <span className="feature-icon violet payment-unavailable-icon"><Icon name="wallet" size={21} /></span>
+            <h3 id="payment-unavailable-title">پرداخت آزمایشی</h3>
+            <p>با تأیید این مرحله، سفارش به‌صورت آزمایشی ثبت می‌شود و یک گفت‌وگوی اختصاصی با اپراتور برای کل سبد باز می‌شود. هیچ پرداخت واقعی انجام نمی‌شود.</p>
+            {paymentError && <p className="user-form-error" role="alert">{paymentError}</p>}
+            <div className="category-dialog-actions">
+              <button type="button" className="cancel-delete-button" onClick={() => { setPaymentError(''); setPaymentDialogOpen(false) }}>انصراف</button>
+              <button type="button" className="confirm-delete-button demo-payment-confirm" onClick={() => {
+                setPaymentError('')
+                if (!onDemoPayment()) setPaymentError('ثبت سفارش آزمایشی انجام نشد. دوباره تلاش کنید.')
+              }}>شبیه‌سازی پرداخت موفق</button>
+            </div>
+          </section>
         </div>
       )}
     </section>
@@ -1663,7 +1916,7 @@ function SectionPage({
   const description = isServices
     ? 'هر چیزی که برای رشد و ساختن نیاز داری، همین‌جاست.'
     : isEvents
-      ? 'دورهمی‌ها و اتفاق‌های تازهٔ جامعهٔ ایکس‌کافه را از دست نده.'
+      ? 'ببین چی بازه و چقدر وقت داری!'
       : isWallet
         ? 'موجودی و گردش حساب خودت را یک‌جا مدیریت کن.'
         : isAbout
@@ -1675,7 +1928,7 @@ function SectionPage({
     <>
       <div className="welcome-row section-welcome">
         <div><div className="eyebrow"><span className="eyebrow-dot" /> {section}</div><h1>{title}</h1><p>{description}</p></div>
-        {!isAbout && !isContact && <button className="primary-button" onClick={isEvents ? () => document.getElementById('events-list')?.scrollIntoView({ behavior: 'smooth' }) : undefined}><Icon name={isEvents ? 'calendar' : isWallet ? 'plus' : 'sparkle'} size={17} />{isEvents ? 'تقویم رویدادها' : isWallet ? 'افزایش موجودی' : 'شروع کن'}</button>}
+        {!isAbout && !isContact && !isEvents && <button className="primary-button"><Icon name={isWallet ? 'plus' : 'sparkle'} size={17} />{isWallet ? 'افزایش موجودی' : 'شروع کن'}</button>}
       </div>
       {isWallet ? (
         <div className="wallet-view">
@@ -1809,6 +2062,197 @@ function AppEventCard({
   return <article className="event-card">{content}</article>
 }
 
+function DemoConversationPage({
+  role,
+  search,
+  orders: demoOrders,
+  activeOrder,
+  onOpenOrder,
+  onSendMessage,
+}: {
+  role: Role
+  search: string
+  orders: DemoOrder[]
+  activeOrder: DemoOrder | null
+  onOpenOrder: (orderId: string | null) => void
+  onSendMessage: (orderId: string, text: string, senderRole: 'user' | 'operator', attachment?: DemoAttachment) => void
+}) {
+  const isOperatorView = role !== 'user'
+  const filteredOrders = demoOrders.filter((order) => {
+    const searchable = `${order.userName} ${order.operatorName} ${order.items.map((item) => item.name).join(' ')}`
+    return searchable.includes(search.trim())
+  })
+
+  return (
+    <>
+      <section className="panel demo-conversation-list">
+        {filteredOrders.length === 0 ? (
+          <div className="downloads-empty">
+            <span className="downloads-empty-icon"><Icon name="chat" size={24} /></span>
+            <h3>{search ? 'گفتگویی پیدا نشد' : 'هنوز گفتگویی نداری'}</h3>
+            <p>{search ? 'عبارت جست‌وجو را تغییر بده.' : 'بعد از ثبت آزمایشی یک سفارش، نام شخص و خدمات اینجا نمایش داده می‌شوند.'}</p>
+          </div>
+        ) : (
+          <div className="demo-conversation-rows">
+            {filteredOrders.map((order) => (
+              <button type="button" className="demo-conversation-row" key={order.id} onClick={() => onOpenOrder(order.id)}>
+                <span className="demo-conversation-copy">
+                  <strong>{isOperatorView ? order.userName : order.operatorName}</strong>
+                  <span>{order.items.map((item) => `${item.name} × ${new Intl.NumberFormat('fa-IR').format(item.quantity)}`).join('، ')}</span>
+                </span>
+                <Icon name="arrow" size={16} />
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
+      {activeOrder && (
+        <DemoChatDialog
+          key={activeOrder.id}
+          order={activeOrder}
+          role={role}
+          onClose={() => onOpenOrder(null)}
+          onSendMessage={onSendMessage}
+        />
+      )}
+    </>
+  )
+}
+
+function DemoChatDialog({
+  order,
+  role,
+  onClose,
+  onSendMessage,
+}: {
+  order: DemoOrder
+  role: Role
+  onClose: () => void
+  onSendMessage: (orderId: string, text: string, senderRole: 'user' | 'operator', attachment?: DemoAttachment) => void
+}) {
+  const [draft, setDraft] = useState('')
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const isOperatorView = role !== 'user'
+  const senderRole = isOperatorView ? 'operator' : 'user'
+  const formatPrice = (price: number) => new Intl.NumberFormat('fa-IR').format(price)
+  const attachments = order.messages.flatMap((message) => message.attachment ? [{ ...message.attachment, senderName: message.senderName }] : [])
+
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [onClose])
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!draft.trim()) return
+    onSendMessage(order.id, draft, senderRole)
+    setDraft('')
+  }
+
+  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0]
+    if (!file) return
+    onSendMessage(order.id, '', senderRole, { name: file.name, type: file.type || 'application/octet-stream', size: file.size })
+    event.currentTarget.value = ''
+  }
+
+  const formatFileSize = (size: number) => {
+    if (size < 1024) return `${new Intl.NumberFormat('fa-IR').format(size)} بایت`
+    const kilobytes = size / 1024
+    return `${new Intl.NumberFormat('fa-IR', { maximumFractionDigits: 1 }).format(kilobytes)} کیلوبایت`
+  }
+
+  const displayName = isOperatorView ? order.userName : order.operatorName
+  const displayInitial = displayName.trim().charAt(0)
+
+  return (
+    <div className="demo-chat-backdrop" onMouseDown={(event) => {
+      if (event.target === event.currentTarget) onClose()
+    }}>
+      <section className="demo-chat-dialog" role="dialog" aria-modal="true" aria-labelledby="demo-chat-title" onMouseDown={(event) => event.stopPropagation()}>
+        <aside className="demo-chat-sidebar">
+          <div className="demo-chat-sidebar-heading">
+            <span className="demo-sidebar-avatar">{displayInitial}</span>
+            <div><h2>جزئیات گفتگو</h2><p>{displayName}</p></div>
+          </div>
+          <section className="demo-sidebar-section">
+            <h3>خدمات سفارش</h3>
+            <ul className="demo-sidebar-services">
+              {order.items.map((item) => (
+                <li key={item.serviceId}>
+                  <span>{item.name}</span>
+                  <small>تعداد: {new Intl.NumberFormat('fa-IR').format(item.quantity)}</small>
+                </li>
+              ))}
+            </ul>
+          </section>
+          <section className="demo-sidebar-section">
+            <h3>اطلاعات سفارش</h3>
+            <dl className="demo-sidebar-details">
+              <div><dt>کد سفارش</dt><dd>{order.id}</dd></div>
+              <div><dt>وضعیت</dt><dd>{order.status}</dd></div>
+              <div><dt>مبلغ</dt><dd>{formatPrice(order.totalPrice)} ریال</dd></div>
+              <div><dt>پرداخت</dt><dd>آزمایشی</dd></div>
+            </dl>
+          </section>
+          <section className="demo-sidebar-section demo-sidebar-attachments">
+            <div className="demo-sidebar-section-title">
+              <h3>مدارک گفتگو</h3>
+              <span>{new Intl.NumberFormat('fa-IR').format(attachments.length)}</span>
+            </div>
+            {attachments.length === 0 ? (
+              <p className="demo-sidebar-empty">هنوز مدرکی ارسال نشده.</p>
+            ) : (
+              <ul>
+                {attachments.map((attachment, index) => <li key={`${attachment.name}-${index}`}><Icon name="paperclip" size={14} /><span>{attachment.name}</span></li>)}
+              </ul>
+            )}
+            <button type="button" className="demo-sidebar-attach-button" onClick={() => fileInputRef.current?.click()}><Icon name="paperclip" size={15} /> افزودن مدرک</button>
+          </section>
+          <p className="demo-sidebar-disclaimer">نمایش و ارسال مدارک در این نسخه آزمایشی است؛ فایل واقعی بارگذاری نمی‌شود.</p>
+        </aside>
+        <div className="demo-chat-main">
+          <header className="demo-chat-header">
+            <div className="demo-chat-header-person">
+              <span className="demo-chat-avatar">{displayInitial}</span>
+              <div><h2 id="demo-chat-title">{displayName}</h2><p>{isOperatorView ? 'گفتگوی کاربر' : 'اپراتور خدمات'}</p></div>
+            </div>
+            <span className="demo-chat-order-tag">{order.id}</span>
+            <button type="button" className="demo-chat-close" aria-label="بستن گفتگو" onClick={onClose}><Icon name="close" size={19} /></button>
+          </header>
+          <div className="demo-chat-message-area" aria-live="polite">
+            <div className="demo-chat-day-separator"><span>گفتگوی سفارش</span></div>
+            {order.messages.length === 0 ? (
+              <p className="demo-chat-empty">گفتگوی شما با {order.operatorName} آماده است. برای شروع پیام یا مدرک بفرستید.</p>
+            ) : order.messages.map((message) => (
+              <article className={`demo-chat-bubble ${message.senderRole === senderRole ? 'mine' : ''}`} key={message.id}>
+                <strong>{message.senderName}</strong>
+                {message.attachment && (
+                  <div className="demo-chat-file">
+                    <span><Icon name="receipt" size={19} /></span>
+                    <div><b>{message.attachment.name}</b><small>{formatFileSize(message.attachment.size)} · پیوست آزمایشی</small></div>
+                  </div>
+                )}
+                {message.text && <p>{message.text}</p>}
+                <time dateTime={message.createdAt}>{new Intl.DateTimeFormat('fa-IR', { hour: '2-digit', minute: '2-digit' }).format(new Date(message.createdAt))}</time>
+              </article>
+            ))}
+          </div>
+          <form className="demo-chat-composer" onSubmit={handleSubmit}>
+            <input ref={fileInputRef} className="demo-chat-file-input" type="file" aria-label="انتخاب مدرک" onChange={handleFileChange} />
+            <button type="button" className="demo-chat-attach" aria-label="پیوست مدرک" title="پیوست مدرک" onClick={() => fileInputRef.current?.click()}><Icon name="paperclip" size={20} /></button>
+            <input aria-label="پیام شما" value={draft} onChange={(event) => setDraft(event.currentTarget.value)} placeholder="پیام بنویس..." />
+            <button className="demo-chat-send" type="submit" disabled={!draft.trim()} aria-label="ارسال پیام"><Icon name="arrow" size={17} /></button>
+          </form>
+        </div>
+      </section>
+    </div>
+  )
+}
+
 function PanelPage({
   page,
   role,
@@ -1825,6 +2269,10 @@ function PanelPage({
   deleteService,
   addEvent,
   deleteEvent,
+  demoOrders,
+  activeDemoOrderId,
+  onOpenDemoOrder,
+  onSendDemoMessage,
 }: {
   page: string
   role: Role
@@ -1841,8 +2289,26 @@ function PanelPage({
   deleteService: (serviceId: string) => void
   addEvent: (event: AppEvent) => void
   deleteEvent: (eventId: string) => void
+  demoOrders: DemoOrder[]
+  activeDemoOrderId: string | null
+  onOpenDemoOrder: (orderId: string | null) => void
+  onSendDemoMessage: (orderId: string, text: string, senderRole: 'user' | 'operator', attachment?: DemoAttachment) => void
 }) {
   const [adminSettingsSection, setAdminSettingsSection] = useState<AdminSettingsSection>('profile')
+  const [adminUsers, setAdminUsers] = useState(() => loadAdminPeople(adminUsersStorageKey, 'admin users'))
+  const [adminOperators, setAdminOperators] = useState(() => loadAdminPeople(adminOperatorsStorageKey, 'admin operators'))
+  const [addAdminPersonDialogOpen, setAddAdminPersonDialogOpen] = useState(false)
+  const [editingAdminPerson, setEditingAdminPerson] = useState<AdminUser | null>(null)
+  const [pendingDeleteAdminPerson, setPendingDeleteAdminPerson] = useState<AdminUser | null>(null)
+  const [reportingAdminPerson, setReportingAdminPerson] = useState<AdminUser | null>(null)
+  const [adminPeopleActionError, setAdminPeopleActionError] = useState('')
+  const isAdminUsersPage = role === 'admin' && page === 'کاربران'
+  const isAdminOperatorsPage = role === 'admin' && page === 'اپراتورها'
+  const isAdminPeoplePage = isAdminUsersPage || isAdminOperatorsPage
+  const adminPersonLabel = isAdminUsersPage ? 'کاربر' : 'اپراتور'
+  const adminPeopleStorageKey = isAdminUsersPage ? adminUsersStorageKey : adminOperatorsStorageKey
+  const adminPeople = isAdminUsersPage ? adminUsers : adminOperators
+  const setAdminPeople = isAdminUsersPage ? setAdminUsers : setAdminOperators
   const pageDescriptions: Record<string, string> = {
     'کیف پول': 'موجودی و تراکنش‌های حساب خود را مدیریت کنید.',
     'کاربران': 'فهرست اعضا و وضعیت حساب‌های ایکس‌کافه.',
@@ -1855,15 +2321,72 @@ function PanelPage({
     'حساب من': 'اطلاعات شخصی و تنظیمات حساب کاربری.',
     'تنظیمات ظاهری': 'ظاهر سایت را مطابق سلیقهٔ خود انتخاب کنید.',
   }
-  const list = page.includes('سفارش') ? orders : page === 'گفتگوها' ? [
-    { id: 'CH-108', service: 'مشاوره دربارهٔ سفارش طراحی', date: 'امروز، ۱۱:۰۸', amount: 'پاسخ جدید', status: 'آنلاین', tone: 'purple', initials: 'م' },
-    { id: 'CH-104', service: 'پیگیری وضعیت سفارش', date: 'امروز، ۰۹:۳۵', amount: '۴ پیام', status: 'در انتظار', tone: 'blue', initials: 'ع' },
-    { id: 'CH-099', service: 'راهنمایی برای شروع', date: 'دیروز، ۱۸:۱۲', amount: 'بسته‌شده', status: 'تکمیل', tone: 'green', initials: 'ر' },
-  ] : orders
+  const list = orders
   const matching = list.filter((item) => `${item.id} ${item.service} ${item.status}`.includes(search.trim()))
+  const visibleDemoOrders = demoOrders.filter((order) => role === 'operator'
+    ? order.operatorId === demoOperators[0].id
+    : role === 'user'
+      ? order.userId === demoUserId
+      : true)
+  const activeDemoOrder = visibleDemoOrders.find((order) => order.id === activeDemoOrderId) ?? null
+  const matchingAdminPeople = adminPeople.filter((person) => `${person.fullName} ${person.phone} ${person.nationalCode}`.includes(search.trim()))
+  const persistAdminPeople = (nextPeople: AdminUser[], errorMessage: string): boolean => {
+    try {
+      localStorage.setItem(adminPeopleStorageKey, JSON.stringify(nextPeople))
+    } catch (error) {
+      console.error(`Could not save ${adminPersonLabel}s.`, error)
+      setAdminPeopleActionError(errorMessage)
+      return false
+    }
+
+    setAdminPeople(nextPeople)
+    setAdminPeopleActionError('')
+    return true
+  }
+  const handleCreateAdminPerson = (person: NewAdminUser): string | null => {
+    const nationalCode = normalizeDigits(person.nationalCode)
+    if (adminPeople.some((existingPerson) => normalizeDigits(existingPerson.nationalCode) === nationalCode)) {
+      return 'این کد ملی قبلاً ثبت شده است.'
+    }
+
+    const nextPeople = [{
+      ...person,
+      id: createAdminUserId(),
+      nationalCode: toPersianDigits(nationalCode),
+      isOnline: false,
+    }, ...adminPeople]
+
+    if (!persistAdminPeople(nextPeople, `ذخیرهٔ ${adminPersonLabel} انجام نشد. دوباره تلاش کنید.`)) {
+      return `ذخیرهٔ ${adminPersonLabel} انجام نشد. دوباره تلاش کنید.`
+    }
+    return null
+  }
+  const handleUpdateAdminPerson = (personId: string, person: NewAdminUser): string | null => {
+    const nationalCode = normalizeDigits(person.nationalCode)
+    if (adminPeople.some((existingPerson) => existingPerson.id !== personId && normalizeDigits(existingPerson.nationalCode) === nationalCode)) {
+      return `این کد ملی قبلاً برای ${adminPersonLabel} دیگری ثبت شده است.`
+    }
+    if (!adminPeople.some((existingPerson) => existingPerson.id === personId)) return `${adminPersonLabel} موردنظر پیدا نشد.`
+
+    const nextPeople = adminPeople.map((existingPerson) => existingPerson.id === personId
+      ? { ...existingPerson, ...person, nationalCode: toPersianDigits(nationalCode) }
+      : existingPerson)
+    if (!persistAdminPeople(nextPeople, `ذخیرهٔ تغییرات ${adminPersonLabel} انجام نشد. دوباره تلاش کنید.`)) {
+      return `ذخیرهٔ تغییرات ${adminPersonLabel} انجام نشد. دوباره تلاش کنید.`
+    }
+    return null
+  }
+  const handleConfirmDeleteAdminPerson = () => {
+    if (!pendingDeleteAdminPerson) return
+    const nextPeople = adminPeople.filter((person) => person.id !== pendingDeleteAdminPerson.id)
+    if (persistAdminPeople(nextPeople, `حذف ${adminPersonLabel} انجام نشد. دوباره تلاش کنید.`)) {
+      setPendingDeleteAdminPerson(null)
+    }
+  }
+
   return (
     <>
-      <div className="welcome-row section-welcome"><div><div className="eyebrow"><span className="eyebrow-dot" /> پنل {roleLabels[role]}</div><h1>{page}</h1><p>{pageDescriptions[page] ?? 'خلاصهٔ فعالیت‌ها و اطلاعات حساب شما.'}</p></div>{page !== 'دانلودها' && page !== 'تنظیمات' && page !== 'تنظیمات ظاهری' && <button className="primary-button"><Icon name={page === 'گفتگوها' ? 'chat' : 'plus'} size={17} />{page === 'گفتگوها' ? 'گفتگوی تازه' : 'افزودن مورد جدید'}</button>}</div>
+      <div className="welcome-row section-welcome"><div><div className="eyebrow"><span className="eyebrow-dot" /> پنل {roleLabels[role]}</div><h1>{page}</h1><p>{pageDescriptions[page] ?? 'خلاصهٔ فعالیت‌ها و اطلاعات حساب شما.'}</p></div>{page !== 'دانلودها' && page !== 'تنظیمات' && page !== 'تنظیمات ظاهری' && page !== 'گفتگوها' && <button className="primary-button" type="button" onClick={isAdminPeoplePage ? () => { setAdminPeopleActionError(''); setAddAdminPersonDialogOpen(true) } : undefined}><Icon name="plus" size={17} />افزودن مورد جدید</button>}</div>
       {page === 'تنظیمات' && role === 'admin' ? (
         <AdminSettingsPage
           section={adminSettingsSection}
@@ -1890,6 +2413,75 @@ function PanelPage({
         <AppearanceSettings siteStyle={siteStyle} setSiteStyle={setSiteStyle} />
       ) : page === 'کیف پول' ? (
         <SectionPage section="کیف پول" role={role} />
+      ) : page === 'گفتگوها' ? (
+        <DemoConversationPage
+          role={role}
+          search={search}
+          orders={visibleDemoOrders}
+          activeOrder={activeDemoOrder}
+          onOpenOrder={onOpenDemoOrder}
+          onSendMessage={onSendDemoMessage}
+        />
+      ) : isAdminPeoplePage ? (
+        <section className="panel orders-panel panel-list admin-people-panel">
+          <div className="panel-heading">
+            <div>
+              <h2>{isAdminUsersPage ? 'کاربران ثبت‌شده' : 'اپراتورهای ثبت‌شده'}</h2>
+              <p>{new Intl.NumberFormat('fa-IR').format(adminPeople.length)} {adminPersonLabel}</p>
+            </div>
+          </div>
+          <p className="admin-people-presence-note">وضعیت {isAdminUsersPage ? 'کاربران' : 'اپراتورها'} پس از راه‌اندازی ورود و خروج واقعی به‌روزرسانی می‌شود.</p>
+          {adminPeopleActionError && !pendingDeleteAdminPerson && <p className="user-form-error admin-people-action-error" role="alert">{adminPeopleActionError}</p>}
+          {adminPeople.length === 0 ? (
+            <div className="downloads-empty admin-users-empty">
+              <span className="downloads-empty-icon"><Icon name={isAdminUsersPage ? 'users' : 'support'} size={24} /></span>
+              <h3>هنوز {isAdminUsersPage ? 'کاربری' : 'اپراتوری'} ثبت نشده</h3>
+              <p>برای شروع، اولین {adminPersonLabel} را ثبت کن.</p>
+            </div>
+          ) : (
+            <div className="table-scroll">
+              <table className="admin-people-table">
+                <thead><tr><th>نام و نام خانوادگی</th><th>شماره همراه</th><th>کد ملی</th><th>تاریخ تولد</th><th>جنسیت</th><th>وضعیت</th><th>عملیات</th></tr></thead>
+                <tbody>{matchingAdminPeople.length ? matchingAdminPeople.map((person) => (
+                  <tr key={person.id}>
+                    <td>{person.fullName}</td>
+                    <td>{person.phone}</td>
+                    <td>{person.nationalCode}</td>
+                    <td>{person.birthDate ? formatPersianDate(person.birthDate) : '—'}</td>
+                    <td>{person.gender === 'female' ? 'زن' : person.gender === 'male' ? 'مرد' : person.gender === 'undisclosed' ? 'ترجیح می‌دهد نگوید' : '—'}</td>
+                    <td><span className="status-pill admin-user-offline"><i />آفلاین</span></td>
+                    <td>
+                      <div className="admin-user-actions">
+                        <button
+                          type="button"
+                          className="admin-user-action report-user-action"
+                          onClick={() => setReportingAdminPerson(person)}
+                        ><Icon name="receipt" size={14} /><span>گزارش کار</span></button>
+                        <button
+                          type="button"
+                          className="admin-user-action"
+                          onClick={() => {
+                            setAdminPeopleActionError('')
+                            setEditingAdminPerson(person)
+                          }}
+                        >ویرایش</button>
+                        <button
+                          type="button"
+                          className="admin-user-action delete-user-action"
+                          aria-label={`حذف ${person.fullName}`}
+                          onClick={() => {
+                            setAdminPeopleActionError('')
+                            setPendingDeleteAdminPerson(person)
+                          }}
+                        ><Icon name="trash" size={14} /><span>حذف</span></button>
+                      </div>
+                    </td>
+                  </tr>
+                )) : <tr><td className="empty-row" colSpan={7}>{adminPersonLabel}ی با این عبارت پیدا نشد.</td></tr>}</tbody>
+              </table>
+            </div>
+          )}
+        </section>
       ) : page === 'دانلودها' ? (
         <section className="panel downloads-panel">
           <div className="panel-heading">
@@ -1922,7 +2514,191 @@ function PanelPage({
           </div>
         </section>
       )}
+      {isAdminPeoplePage && (addAdminPersonDialogOpen || editingAdminPerson) && (
+        <AdminUserDialog
+          key={editingAdminPerson?.id ?? 'new'}
+          entityLabel={adminPersonLabel}
+          initialUser={editingAdminPerson}
+          onClose={() => {
+            setAddAdminPersonDialogOpen(false)
+            setEditingAdminPerson(null)
+          }}
+          onSave={(person) => editingAdminPerson ? handleUpdateAdminPerson(editingAdminPerson.id, person) : handleCreateAdminPerson(person)}
+        />
+      )}
+      {isAdminPeoplePage && pendingDeleteAdminPerson && (
+        <div className="category-dialog-backdrop user-delete-backdrop" onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setPendingDeleteAdminPerson(null)
+        }}>
+          <section className="category-delete-dialog" role="alertdialog" aria-modal="true" aria-labelledby="delete-user-title" aria-describedby="delete-user-description">
+            <span className="delete-warning-icon"><Icon name="trash" size={21} /></span>
+            <h3 id="delete-user-title">حذف {adminPersonLabel}؟</h3>
+            <p id="delete-user-description">{adminPersonLabel} «{pendingDeleteAdminPerson.fullName}» حذف می‌شود. این کار قابل بازگشت نیست.</p>
+            {adminPeopleActionError && <p className="user-form-error" role="alert">{adminPeopleActionError}</p>}
+            <div className="category-dialog-actions">
+              <button type="button" className="cancel-delete-button" onClick={() => setPendingDeleteAdminPerson(null)}>انصراف</button>
+              <button type="button" className="confirm-delete-button" onClick={handleConfirmDeleteAdminPerson}>حذف {adminPersonLabel}</button>
+            </div>
+          </section>
+        </div>
+      )}
+      {isAdminPeoplePage && reportingAdminPerson && (
+        <div className="category-dialog-backdrop user-dialog-backdrop" onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setReportingAdminPerson(null)
+        }}>
+          <section className="create-user-dialog user-activity-dialog" role="dialog" aria-modal="true" aria-labelledby="user-activity-title">
+            <div className="create-user-dialog-heading">
+              <div>
+                <span className="feature-icon violet"><Icon name="receipt" size={21} /></span>
+                <div>
+                  <h2 id="user-activity-title">گزارش {adminPersonLabel}</h2>
+                  <p>{reportingAdminPerson.fullName}</p>
+                </div>
+              </div>
+              <button type="button" className="close-category-dialog" aria-label="بستن پنجره" onClick={() => setReportingAdminPerson(null)}>×</button>
+            </div>
+            <div className="user-activity-sections">
+              <section>
+                <h3>{isAdminUsersPage ? 'خدمات انتخاب‌شده' : 'خدمات انجام‌شده'}</h3>
+                <p>{isAdminUsersPage ? 'ثبت خدمات انتخاب‌شده هنوز به فعالیت‌های این کاربر متصل نشده است.' : 'ثبت خدمات انجام‌شده هنوز به فعالیت‌های این اپراتور متصل نشده است.'}</p>
+              </section>
+              <section>
+                <h3>{isAdminUsersPage ? 'گفتگو با اپراتورها' : 'گفتگو با کاربران'}</h3>
+                <p>ثبت گفتگوها هنوز به سامانهٔ گفتگو متصل نشده است.</p>
+              </section>
+            </div>
+          </section>
+        </div>
+      )}
     </>
+  )
+}
+
+function AdminUserDialog({ onClose, onSave, initialUser, entityLabel }: {
+  onClose: () => void
+  onSave: (user: NewAdminUser) => string | null
+  initialUser: AdminUser | null
+  entityLabel: string
+}) {
+  const [fullName, setFullName] = useState(initialUser?.fullName ?? '')
+  const [phone, setPhone] = useState(initialUser?.phone ?? '')
+  const [nationalCode, setNationalCode] = useState(initialUser?.nationalCode ?? '')
+  const [birthDate, setBirthDate] = useState(initialUser?.birthDate ?? '')
+  const [gender, setGender] = useState<AdminUserGender | ''>(initialUser?.gender ?? '')
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+
+    window.addEventListener('keydown', closeOnEscape)
+    return () => window.removeEventListener('keydown', closeOnEscape)
+  }, [onClose])
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const cleanName = fullName.trim()
+    const cleanPhone = phone.trim()
+    const cleanNationalCode = normalizeDigits(nationalCode.trim())
+
+    if (!cleanName || !cleanPhone || !cleanNationalCode) {
+      setError('نام، شماره همراه و کد ملی را وارد کنید.')
+      return
+    }
+    if (!/^\d{10}$/.test(cleanNationalCode)) {
+      setError('کد ملی باید ۱۰ رقم باشد.')
+      return
+    }
+
+    const saveError = onSave({
+      fullName: cleanName,
+      phone: cleanPhone,
+      nationalCode: cleanNationalCode,
+      birthDate: birthDate || undefined,
+      gender: gender || undefined,
+    })
+    if (saveError) {
+      setError(saveError)
+      return
+    }
+    onClose()
+  }
+
+  return (
+    <div className="category-dialog-backdrop user-dialog-backdrop" onMouseDown={(event) => {
+      if (event.target === event.currentTarget) onClose()
+    }}>
+      <section className="create-user-dialog" role="dialog" aria-modal="true" aria-labelledby="create-user-title">
+        <div className="create-user-dialog-heading">
+          <div>
+            <span className="feature-icon violet"><Icon name={entityLabel === 'کاربر' ? 'users' : 'support'} size={21} /></span>
+            <div>
+              <h2 id="create-user-title">{initialUser ? `ویرایش ${entityLabel}` : `افزودن ${entityLabel}`}</h2>
+              <p>{initialUser ? `اطلاعات ${entityLabel} را ویرایش کنید.` : `اطلاعات ${entityLabel} جدید را وارد کنید.`}</p>
+            </div>
+          </div>
+          <button type="button" className="close-category-dialog" aria-label="بستن پنجره" onClick={onClose}>×</button>
+        </div>
+        <form className="create-user-form" onSubmit={handleSubmit}>
+          <label className="settings-field">
+            <span>نام و نام خانوادگی</span>
+            <input autoFocus autoComplete="name" value={fullName} onChange={(event) => setFullName(event.target.value)} required maxLength={100} />
+          </label>
+          <label className="settings-field">
+            <span>شماره همراه</span>
+            <input type="tel" inputMode="tel" autoComplete="tel" value={phone} onChange={(event) => setPhone(event.target.value)} required maxLength={20} />
+          </label>
+          <label className="settings-field">
+            <span>کد ملی</span>
+            <input inputMode="numeric" autoComplete="off" value={nationalCode} onChange={(event) => setNationalCode(event.target.value)} required maxLength={10} />
+          </label>
+          <label className="settings-field">
+            <span>تاریخ تولد <small>(اختیاری)</small></span>
+            <DatePicker
+              containerClassName="event-date-picker"
+              calendar={persian}
+              locale={persianFa}
+              format="YYYY/MM/DD"
+              calendarPosition="bottom-right"
+              maxDate={maxBirthDate}
+              onOpenPickNewDate={false}
+              value={birthDate ? dateFromIso(birthDate) : ''}
+              onChange={(date) => setBirthDate(date ? dateToIso(date.toDate()) : '')}
+              render={(_, openCalendar) => (
+                <input
+                  type="text"
+                  className="event-date-input"
+                  aria-label="تاریخ تولد (شمسی، اختیاری)"
+                  value={birthDate ? formatPersianDateInput(birthDate) : ''}
+                  placeholder="انتخاب تاریخ شمسی"
+                  onClick={openCalendar}
+                  onFocus={openCalendar}
+                  readOnly
+                />
+              )}
+            />
+          </label>
+          <label className="settings-field">
+            <span>جنسیت <small>(اختیاری)</small></span>
+            <select value={gender} onChange={(event) => {
+              const value = event.target.value
+              setGender(value === 'female' || value === 'male' || value === 'undisclosed' ? value : '')
+            }}>
+              <option value="">انتخاب نشده</option>
+              <option value="female">زن</option>
+              <option value="male">مرد</option>
+              <option value="undisclosed">ترجیح می‌دهم نگویم</option>
+            </select>
+          </label>
+          {error && <p className="user-form-error" role="alert">{error}</p>}
+          <div className="user-form-actions">
+            <button type="submit" className="primary-button"><Icon name={initialUser ? 'check' : 'plus'} size={16} />{initialUser ? 'ذخیره تغییرات' : `ثبت ${entityLabel}`}</button>
+            <button type="button" className="user-form-cancel" onClick={onClose}>انصراف</button>
+          </div>
+        </form>
+      </section>
+    </div>
   )
 }
 
