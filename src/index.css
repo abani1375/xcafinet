@@ -2,14 +2,18 @@
 
 :root {
   font-family: 'Vazirmatn', Tahoma, sans-serif;
+  font-size: 16px;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   font-optical-sizing: auto;
   font-weight: 400;
+  line-height: 1.7;
   color: #24253b;
   background: #f7f8fc;
+  text-size-adjust: 100%;
+  -webkit-text-size-adjust: 100%;
 
   --color-violet: #7058ed;
 }
@@ -22,6 +26,8 @@ body {
   min-width: 320px;
   min-height: 100vh;
   margin: 0;
+  font-size: 1rem;
+  line-height: 1.7;
 }
 
 button,

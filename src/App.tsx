@@ -1,5 +1,12 @@
-import { useEffect, useRef, useState, type FormEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type ForwardRefExoticComponent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import DatePickerModule, { type CalendarProps, type DatePickerProps } from 'react-multi-date-picker'
+import persian from 'react-date-object/calendars/persian'
+import persianFa from 'react-date-object/locales/persian_fa'
 import './App.css'
+
+// Vite wraps this CommonJS package's exports, so render its nested React component.
+type PersianDatePickerProps = Omit<CalendarProps, 'onChange'> & DatePickerProps
+const DatePicker = (DatePickerModule as unknown as { default: ForwardRefExoticComponent<PersianDatePickerProps> }).default
 
 type Role = 'user' | 'operator' | 'admin'
 type ServiceView = 'categories' | 'all'
@@ -15,16 +22,20 @@ const siteStyleOptions = [
   { id: 'colored', label: 'رنگی', description: 'سایه‌ها و سطح‌ها با رنگ تأکیدی هماهنگ‌اند.' },
 ] as const
 type SiteStyle = typeof siteStyleOptions[number]['id']
-type AdminSettingsSection = 'profile' | 'catalog' | 'appearance'
+type AdminSettingsSection = 'profile' | 'catalog' | 'events' | 'appearance'
 type AppearanceTab = 'site' | 'header'
 type AppearanceStyleGroup = 'simple' | 'neumorphic'
-type CatalogCategory = { id: string; name: string; description: string }
-type CatalogService = { id: string; categoryId: string; name: string; description: string; price: number }
+type CatalogCategory = { id: string; name: string; description: string; icon?: string }
+type CatalogService = { id: string; categoryId: string; name: string; description: string; price: number; icon?: string }
 type ServiceCatalogData = { categories: CatalogCategory[]; services: CatalogService[] }
 type CartItem = { serviceId: string; categoryName: string; name: string; description: string; price: number; quantity: number }
+type AppEvent = { id: string; title: string; startDate: string; endDate: string; categoryId?: string; serviceId?: string }
 
-const catalogStorageKey = 'xcafinet-service-catalog'
-const cartStorageKey = 'xcafinet-cart'
+const catalogStorageKey = 'xcafinet-service-catalog-rial'
+const legacyCatalogStorageKey = 'xcafinet-service-catalog'
+const cartStorageKey = 'xcafinet-cart-rial'
+const legacyCartStorageKey = 'xcafinet-cart'
+const eventsStorageKey = 'xcafinet-events'
 const themeStorageKey = 'xcafinet-theme'
 const siteStyleStorageKey = 'xcafinet-site-style'
 const defaultCatalog: ServiceCatalogData = {
@@ -34,9 +45,9 @@ const defaultCatalog: ServiceCatalogData = {
     { id: 'support', name: 'مشاوره و پشتیبانی', description: 'همراهی در تمام قدم‌های مسیر' },
   ],
   services: [
-    { id: 'design-identity', categoryId: 'design', name: 'طراحی هویت بصری', description: 'طراحی یک هویت بصری یکپارچه برای برند شما', price: 1450000 },
-    { id: 'web-development', categoryId: 'web', name: 'طراحی و توسعه وب‌سایت', description: 'طراحی وب‌سایت متناسب با نیاز کسب‌وکار شما', price: 3800000 },
-    { id: 'customer-support', categoryId: 'support', name: 'مشاوره و پشتیبانی', description: 'همراهی و پاسخ‌گویی به پرسش‌های شما', price: 280000 },
+    { id: 'design-identity', categoryId: 'design', name: 'طراحی هویت بصری', description: 'طراحی یک هویت بصری یکپارچه برای برند شما', price: 14500000 },
+    { id: 'web-development', categoryId: 'web', name: 'طراحی و توسعه وب‌سایت', description: 'طراحی وب‌سایت متناسب با نیاز کسب‌وکار شما', price: 38000000 },
+    { id: 'customer-support', categoryId: 'support', name: 'مشاوره و پشتیبانی', description: 'همراهی و پاسخ‌گویی به پرسش‌های شما', price: 2800000 },
   ],
 }
 
@@ -49,6 +60,7 @@ function isCatalogCategory(value: unknown): value is CatalogCategory {
     && typeof value.id === 'string'
     && typeof value.name === 'string'
     && typeof value.description === 'string'
+    && (!('icon' in value) || typeof value.icon === 'string')
 }
 
 function isCatalogService(value: unknown): value is CatalogService {
@@ -64,7 +76,9 @@ function isCatalogService(value: unknown): value is CatalogService {
     && typeof value.name === 'string'
     && typeof value.description === 'string'
     && typeof value.price === 'number'
-    && Number.isFinite(value.price)
+    && Number.isSafeInteger(value.price)
+    && value.price > 0
+    && (!('icon' in value) || typeof value.icon === 'string')
 }
 
 function isServiceCatalogData(value: unknown): value is ServiceCatalogData {
@@ -78,13 +92,26 @@ function isServiceCatalogData(value: unknown): value is ServiceCatalogData {
     && value.services.every(isCatalogService)
 }
 
+function tomanToRial(price: number): number {
+  const rialPrice = price * 10
+  if (!Number.isSafeInteger(rialPrice)) throw new Error('A stored toman price is too large to convert safely.')
+  return rialPrice
+}
+
 function loadServiceCatalog(): ServiceCatalogData {
   try {
-    const stored = localStorage.getItem(catalogStorageKey)
+    const currentStored = localStorage.getItem(catalogStorageKey)
+    const stored = currentStored ?? localStorage.getItem(legacyCatalogStorageKey)
     if (stored === null) return defaultCatalog
 
     const parsed: unknown = JSON.parse(stored)
-    if (isServiceCatalogData(parsed)) return parsed
+    if (isServiceCatalogData(parsed)) {
+      if (currentStored !== null) return parsed
+      return {
+        ...parsed,
+        services: parsed.services.map((service) => ({ ...service, price: tomanToRial(service.price) })),
+      }
+    }
 
     console.error('Stored service catalog has an invalid format; using the starter catalog.')
   } catch (error) {
@@ -92,6 +119,83 @@ function loadServiceCatalog(): ServiceCatalogData {
   }
 
   return defaultCatalog
+}
+
+function isDateOnly(value: unknown): value is string {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const [year, month, day] = value.split('-').map(Number)
+  if (year < 1000) return false
+  const date = new Date(Date.UTC(year, month - 1, day))
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day
+}
+
+function isAppEvent(value: unknown): value is AppEvent {
+  return typeof value === 'object'
+    && value !== null
+    && 'id' in value
+    && 'title' in value
+    && 'startDate' in value
+    && 'endDate' in value
+    && typeof value.id === 'string'
+    && typeof value.title === 'string'
+    && value.title.trim().length > 0
+    && isDateOnly(value.startDate)
+    && isDateOnly(value.endDate)
+    && value.startDate <= value.endDate
+    && (!('categoryId' in value) || typeof value.categoryId === 'string')
+    && (!('serviceId' in value) || typeof value.serviceId === 'string')
+}
+
+function loadEvents(): AppEvent[] {
+  try {
+    const stored = localStorage.getItem(eventsStorageKey)
+    if (stored === null) return []
+
+    const parsed: unknown = JSON.parse(stored)
+    if (Array.isArray(parsed) && parsed.every(isAppEvent)) return parsed
+
+    console.error('Stored events have an invalid format; starting with an empty list.')
+  } catch (error) {
+    console.error('Could not load the saved events.', error)
+  }
+
+  return []
+}
+
+function dateToIso(date: Date): string {
+  const year = date.getFullYear().toString().padStart(4, '0')
+  const month = (date.getMonth() + 1).toString().padStart(2, '0')
+  const day = date.getDate().toString().padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function dateFromIso(value: string): Date {
+  const [year, month, day] = value.split('-').map(Number)
+  return new Date(year, month - 1, day, 12)
+}
+
+function formatPersianDate(value: string): string {
+  return new Intl.DateTimeFormat('fa-IR-u-ca-persian', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).format(dateFromIso(value))
+}
+
+function formatPersianDateInput(value: string): string {
+  return new Intl.DateTimeFormat('fa-IR-u-ca-persian', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(dateFromIso(value))
+}
+
+function daysUntil(value: string): number {
+  const [year, month, day] = value.split('-').map(Number)
+  const today = new Date()
+  const endDate = Date.UTC(year, month - 1, day)
+  const todayDate = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate())
+  return Math.round((endDate - todayDate) / 86_400_000)
 }
 
 function isCartItem(value: unknown): value is CartItem {
@@ -117,11 +221,15 @@ function isCartItem(value: unknown): value is CartItem {
 
 function loadCart(): CartItem[] {
   try {
-    const stored = localStorage.getItem(cartStorageKey)
+    const currentStored = localStorage.getItem(cartStorageKey)
+    const stored = currentStored ?? localStorage.getItem(legacyCartStorageKey)
     if (stored === null) return []
 
     const parsed: unknown = JSON.parse(stored)
-    if (Array.isArray(parsed) && parsed.every(isCartItem)) return parsed
+    if (Array.isArray(parsed) && parsed.every(isCartItem)) {
+      if (currentStored !== null) return parsed
+      return parsed.map((item) => ({ ...item, price: tomanToRial(item.price) }))
+    }
 
     console.error('Stored shopping cart has an invalid format; starting with an empty cart.')
   } catch (error) {
@@ -133,6 +241,43 @@ function loadCart(): CartItem[] {
 
 function createCatalogId(type: 'category' | 'service') {
   return `${type}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+function createEventId() {
+  return `event-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+function createCatalogIcon(file: File): Promise<string> {
+  if (!file.type.startsWith('image/')) return Promise.reject(new Error('فایل انتخاب‌شده تصویر نیست.'))
+  if (file.size > 5 * 1024 * 1024) return Promise.reject(new Error('حجم آیکن نباید بیشتر از ۵ مگابایت باشد.'))
+
+  const imageUrl = URL.createObjectURL(file)
+
+  return new Promise((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => {
+      try {
+        const maxSize = 128
+        const scale = Math.min(1, maxSize / Math.max(image.naturalWidth, image.naturalHeight))
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.max(1, Math.round(image.naturalWidth * scale))
+        canvas.height = Math.max(1, Math.round(image.naturalHeight * scale))
+        const context = canvas.getContext('2d')
+        if (!context) throw new Error('امکان آماده‌سازی آیکن وجود ندارد.')
+        context.drawImage(image, 0, 0, canvas.width, canvas.height)
+        resolve(canvas.toDataURL('image/webp', .82))
+      } catch (error) {
+        reject(error instanceof Error ? error : new Error('آیکن بارگذاری نشد.'))
+      } finally {
+        URL.revokeObjectURL(imageUrl)
+      }
+    }
+    image.onerror = () => {
+      URL.revokeObjectURL(imageUrl)
+      reject(new Error('خواندن تصویر انتخاب‌شده ممکن نیست.'))
+    }
+    image.src = imageUrl
+  })
 }
 
 function loadTheme(): Theme {
@@ -234,10 +379,15 @@ function ThemeToggle({ theme, onToggle }: { theme: Theme; onToggle: () => void }
 const roleLabels: Record<Role, string> = { user: 'کاربر', operator: 'اپراتور', admin: 'مدیریت' }
 const navItems: { label: string; icon: IconName }[] = [
   { label: 'خدمات', icon: 'grid' },
-  { label: 'سبد خرید', icon: 'cart' },
   { label: 'رویدادها', icon: 'calendar' },
+  { label: 'سبد خرید', icon: 'cart' },
   { label: 'کیف پول', icon: 'wallet' },
   { label: 'حساب کاربری', icon: 'user' },
+]
+const desktopNavItems: { label: string; icon: IconName }[] = [
+  ...navItems.filter((item) => item.label === 'خدمات' || item.label === 'رویدادها'),
+  { label: 'درباره ما', icon: 'users' },
+  { label: 'تماس با ما', icon: 'support' },
 ]
 const sidebarItems: Record<Role, { label: string; icon: IconName }[]> = {
   admin: [
@@ -266,9 +416,9 @@ const sidebarItems: Record<Role, { label: string; icon: IconName }[]> = {
 }
 
 const orders = [
-  { id: 'XC-2048', service: 'مشاوره و پشتیبانی', date: 'امروز، ۱۰:۴۲', amount: '۲۸۰,۰۰۰', status: 'در حال انجام', tone: 'purple', initials: 'م' },
-  { id: 'XC-2041', service: 'طراحی هویت بصری', date: '۲۵ آبان، ۱۶:۲۰', amount: '۱,۴۵۰,۰۰۰', status: 'تکمیل شده', tone: 'green', initials: 'ط' },
-  { id: 'XC-2035', service: 'توسعه وب‌سایت', date: '۲۳ آبان، ۰۹:۱۵', amount: '۳,۸۰۰,۰۰۰', status: 'تکمیل شده', tone: 'blue', initials: 'و' },
+  { id: 'XC-2048', service: 'مشاوره و پشتیبانی', date: 'امروز، ۱۰:۴۲', amount: '۲,۸۰۰,۰۰۰', status: 'در حال انجام', tone: 'purple', initials: 'م' },
+  { id: 'XC-2041', service: 'طراحی هویت بصری', date: '۲۵ آبان، ۱۶:۲۰', amount: '۱۴,۵۰۰,۰۰۰', status: 'تکمیل شده', tone: 'green', initials: 'ط' },
+  { id: 'XC-2035', service: 'توسعه وب‌سایت', date: '۲۳ آبان، ۰۹:۱۵', amount: '۳۸,۰۰۰,۰۰۰', status: 'تکمیل شده', tone: 'blue', initials: 'و' },
 ]
 
 function App() {
@@ -278,7 +428,9 @@ function App() {
   const [activeNav, setActiveNav] = useState('خانه')
   const [serviceView, setServiceView] = useState<ServiceView>('all')
   const [catalog, setCatalog] = useState(loadServiceCatalog)
+  const [events, setEvents] = useState(loadEvents)
   const [cart, setCart] = useState(loadCart)
+  const [requestedServiceId, setRequestedServiceId] = useState<string | null>(null)
   const [cartNotice, setCartNotice] = useState('')
   const [activePage, setActivePage] = useState('داشبورد')
   const [range, setRange] = useState('این هفته')
@@ -287,7 +439,8 @@ function App() {
   const [noticeOpen, setNoticeOpen] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [supportMenuOpen, setSupportMenuOpen] = useState(false)
-  const supportMenuRef = useRef<HTMLDivElement>(null)
+  const compactSupportMenuRef = useRef<HTMLDivElement>(null)
+  const desktopSupportMenuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     try {
@@ -296,6 +449,14 @@ function App() {
       console.error('Could not save the service catalog.', error)
     }
   }, [catalog])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(eventsStorageKey, JSON.stringify(events))
+    } catch (error) {
+      console.error('Could not save the events.', error)
+    }
+  }, [events])
 
   useEffect(() => {
     try {
@@ -325,7 +486,8 @@ function App() {
     if (!supportMenuOpen) return
 
     const closeOnOutsideClick = (event: PointerEvent) => {
-      if (event.target instanceof Node && !supportMenuRef.current?.contains(event.target)) {
+      const target = event.target
+      if (target instanceof Node && ![compactSupportMenuRef.current, desktopSupportMenuRef.current].some((ref) => ref?.contains(target))) {
         setSupportMenuOpen(false)
       }
     }
@@ -363,6 +525,14 @@ function App() {
 
   const addService = (service: CatalogService) => {
     setCatalog((current) => ({ ...current, services: [...current.services, service] }))
+  }
+
+  const addEvent = (event: AppEvent) => {
+    setEvents((current) => [...current, event])
+  }
+
+  const deleteEvent = (eventId: string) => {
+    setEvents((current) => current.filter((event) => event.id !== eventId))
   }
 
   const updateService = (updatedService: CatalogService) => {
@@ -415,6 +585,13 @@ function App() {
     setCart((current) => current.filter((item) => item.serviceId !== serviceId))
   }
 
+  const openEventService = (serviceId: string) => {
+    setRequestedServiceId(serviceId)
+    setServiceView('all')
+    setServiceSearch('')
+    setActiveNav('خدمات')
+  }
+
   const switchRole = (nextRole: Role) => {
     setRole(nextRole)
     setActivePage('داشبورد')
@@ -434,10 +611,18 @@ function App() {
     : activeNav
   const isServices = activeNav === 'خدمات'
   const isCart = activeNav === 'سبد خرید'
+  const isEmptyCart = isCart && cart.length === 0
+  const isSidebarlessPage = ['رویدادها', 'درباره ما', 'تماس با ما'].includes(activeNav)
   const cartCount = cart.reduce((total, item) => total + item.quantity, 0)
+  const supportMenuItems = (
+    <>
+      <button type="button" role="menuitem" onClick={openSupportConversations}><Icon name="sparkle" size={17} /> دستیار هوش مصنوعی</button>
+      <button type="button" role="menuitem" onClick={openSupportConversations}><Icon name="chat" size={17} /> پشتیبانی آنلاین</button>
+    </>
+  )
 
   return (
-    <div className={`app-shell ${isServices ? 'service-mode' : ''}`} data-theme={theme} data-site-style={siteStyle} dir="rtl">
+    <div className={`app-shell ${isServices ? 'service-mode' : ''} ${isCart ? 'cart-mode' : ''} ${isEmptyCart ? 'empty-cart-mode' : ''}`} data-theme={theme} data-site-style={siteStyle} dir="rtl">
       <header className="topbar">
         <div className="topbar-inner">
           <a className="brand" href="#" onClick={(event) => { event.preventDefault(); setActiveNav('خانه') }} aria-label="ایکس کافه، خانه">
@@ -446,7 +631,7 @@ function App() {
           </a>
           <button className="mobile-menu-button" onClick={() => setMobileMenuOpen(!mobileMenuOpen)} aria-label="باز کردن منو"><Icon name="grid" /></button>
           <nav className={`main-nav ${mobileMenuOpen ? 'is-open' : ''}`} aria-label="ناوبری اصلی">
-            {navItems.map((item) => (
+            {desktopNavItems.map((item) => (
               <button
                 key={item.label}
                 className={`nav-link ${activeNav === item.label ? 'active' : ''}`}
@@ -471,7 +656,16 @@ function App() {
                 </button>
                 {noticeOpen && <div className="notification-popover"><strong>اعلان‌ها</strong><p>سفارش طراحی شما با موفقیت تکمیل شد.</p><span>۱۲ دقیقه پیش</span></div>}
               </div>
-              <ThemeToggle theme={theme} onToggle={toggleTheme} />
+              <button
+                type="button"
+                className={`icon-button desktop-cart-button ${isCart ? 'selected' : ''}`}
+                aria-label={cartCount > 0 ? `سبد خرید، ${cartCount} مورد` : 'سبد خرید'}
+                title="سبد خرید"
+                onClick={() => setActiveNav('سبد خرید')}
+              >
+                <Icon name="cart" size={19} />
+                {cartCount > 0 && <span className="cart-count">{new Intl.NumberFormat('fa-IR').format(cartCount)}</span>}
+              </button>
               <button className="profile-chip" onClick={() => { setActiveNav('حساب کاربری'); setActivePage('داشبورد') }}>
                 <span className="avatar avatar-user">ن</span>
                 <span className="profile-copy"><strong>نگار محمدی</strong><small>{roleLabels[role]}</small></span>
@@ -487,14 +681,11 @@ function App() {
         </a>
         <div className="compact-header-actions">
           <ThemeToggle theme={theme} onToggle={toggleTheme} />
-          <div className="compact-support-wrap" ref={supportMenuRef}>
+          <div className="compact-support-wrap" ref={compactSupportMenuRef}>
             <button className="compact-support-button" type="button" aria-label="پشتیبانی" aria-haspopup="menu" aria-expanded={supportMenuOpen} onClick={() => setSupportMenuOpen((current) => !current)}>
               <Icon name="support" size={18} />
             </button>
-            {supportMenuOpen && <div className="compact-support-menu" role="menu">
-              <button type="button" role="menuitem" onClick={openSupportConversations}><Icon name="sparkle" size={17} /> دستیار هوش مصنوعی</button>
-              <button type="button" role="menuitem" onClick={openSupportConversations}><Icon name="chat" size={17} /> پشتیبانی آنلاین</button>
-            </div>}
+            {supportMenuOpen && <div className="compact-support-menu" role="menu">{supportMenuItems}</div>}
           </div>
         </div>
       </header>
@@ -502,7 +693,7 @@ function App() {
       {isServices ? (
         <>
           <main className="service-main">
-            <ServiceCatalog catalog={catalog} view={serviceView} setView={setServiceView} search={serviceSearch} setSearch={setServiceSearch} onAddToCart={addToCart} notice={cartNotice} />
+            <ServiceCatalog catalog={catalog} view={serviceView} setView={setServiceView} search={serviceSearch} setSearch={setServiceSearch} onAddToCart={addToCart} notice={cartNotice} openServiceId={requestedServiceId} onServiceRequestHandled={() => setRequestedServiceId(null)} />
           </main>
         </>
       ) : isCart ? (
@@ -512,8 +703,8 @@ function App() {
         </main>
       ) : <main className="page-wrap">
         <div className="breadcrumb"><span>ایکس‌کافه</span><b>/</b><span>{activeNav}</span><b>/</b><strong>{contentTitle}</strong></div>
-        <div className="workspace">
-          <aside className="sidebar">
+        <div className={`workspace ${isSidebarlessPage ? 'workspace-no-sidebar' : ''}`}>
+          {!isSidebarlessPage && <aside className="sidebar">
             <div className="account-card">
               <div className="account-avatar-wrap">
                 <span className={`avatar account-avatar avatar-${role}`}>{role === 'admin' ? 'ا' : role === 'operator' ? 'س' : 'ن'}</span>
@@ -547,22 +738,36 @@ function App() {
               <button className="logout-link"><Icon name="logout" size={18} /> خروج از حساب</button>
               <div className="sidebar-footer">ساخته‌شده با <span>♥</span> برای شما <b>نسخه ۱.۴.۰</b></div>
             </div>
-          </aside>
+          </aside>}
 
           <section className="dashboard">
             {activeNav !== 'خانه' && activeNav !== 'حساب کاربری' ? (
-              <SectionPage section={activeNav} role={role} />
+              <SectionPage section={activeNav} role={role} events={events} catalog={catalog} onOpenService={openEventService} onOpenContact={openSupportConversations} />
             ) : activePage === 'داشبورد' ? (
               <Dashboard role={role} range={range} setRange={setRange} search={search} setActivePage={setActivePage} setActiveNav={setActiveNav} />
             ) : (
-              <PanelPage page={activePage} role={role} search={search} catalog={catalog} siteStyle={siteStyle} setSiteStyle={setSiteStyle} addCategory={addCategory} addService={addService} updateCategory={updateCategory} deleteCategory={deleteCategory} updateService={updateService} deleteService={deleteService} />
+              <PanelPage page={activePage} role={role} search={search} catalog={catalog} events={events} siteStyle={siteStyle} setSiteStyle={setSiteStyle} addCategory={addCategory} addService={addService} updateCategory={updateCategory} deleteCategory={deleteCategory} updateService={updateService} deleteService={deleteService} addEvent={addEvent} deleteEvent={deleteEvent} />
             )}
           </section>
         </div>
       </main>}
       <footer className={`mobile-bottom-nav ${isServices ? 'service-bottom-nav' : ''}`} aria-label="ناوبری اصلی پایین صفحه">
-        {navItems.map((item) => <button key={item.label} className={activeNav === item.label ? 'active' : ''} onClick={() => setActiveNav(item.label)} aria-label={item.label === 'سبد خرید' && cartCount > 0 ? `سبد خرید، ${cartCount} مورد` : item.label}><span className="bottom-nav-icon"><Icon name={item.icon} size={19} />{item.label === 'سبد خرید' && cartCount > 0 && <span className="cart-count">{new Intl.NumberFormat('fa-IR').format(cartCount)}</span>}</span><span>{item.label}</span></button>)}
+        <button className={`mobile-service-launch ${isServices ? 'active' : ''}`} type="button" onClick={() => setActiveNav('خدمات')} aria-label="خدمات" title="خدمات">
+          <Icon name="grid" size={21} />
+        </button>
+        <div className="mobile-bottom-nav-links">
+          {navItems.filter((item) => item.label !== 'خدمات').map((item) => <button key={item.label} className={activeNav === item.label ? 'active' : ''} onClick={() => setActiveNav(item.label)} aria-label={item.label === 'سبد خرید' && cartCount > 0 ? `سبد خرید، ${cartCount} مورد` : item.label}><span className="bottom-nav-icon"><Icon name={item.icon} size={19} />{item.label === 'سبد خرید' && cartCount > 0 && <span className="cart-count">{new Intl.NumberFormat('fa-IR').format(cartCount)}</span>}</span><span>{item.label}</span></button>)}
+        </div>
       </footer>
+      <div className="desktop-support-wrap" ref={desktopSupportMenuRef}>
+        <button className="desktop-support-button" type="button" aria-label="پشتیبانی" aria-haspopup="menu" aria-expanded={supportMenuOpen} onClick={() => setSupportMenuOpen((current) => !current)}>
+          <Icon name="support" size={19} />
+        </button>
+        {supportMenuOpen && <div className="desktop-support-menu" role="menu">{supportMenuItems}</div>}
+      </div>
+      <div className="desktop-theme-toggle">
+        <ThemeToggle theme={theme} onToggle={toggleTheme} />
+      </div>
     </div>
   )
 }
@@ -595,7 +800,7 @@ function Dashboard({
         <button className="primary-button" onClick={() => setActiveNav('خدمات')}><Icon name="plus" size={17} /> {isOperator ? 'مشاهده گفتگوها' : isAdmin ? 'مدیریت کاربران' : 'ثبت سفارش جدید'}</button>
       </div>
       <div className="metric-grid">
-        <MetricCard title={isAdmin ? 'درآمد کل' : isOperator ? 'گفتگوهای امروز' : 'موجودی کیف پول'} value={isOperator ? '۱۲' : isAdmin ? '۸۴,۲۵۰,۰۰۰' : '۲,۴۸۰,۰۰۰'} unit={isOperator ? 'گفتگو' : 'تومان'} change="+۱۲.۸٪" icon={isOperator ? 'chat' : 'wallet'} tone="purple" note={isOperator ? '۳ گفتگوی جدید' : 'نسبت به ماه گذشته'} />
+        <MetricCard title={isAdmin ? 'درآمد کل' : isOperator ? 'گفتگوهای امروز' : 'موجودی کیف پول'} value={isOperator ? '۱۲' : isAdmin ? '۸۴۲,۵۰۰,۰۰۰' : '۲۴,۸۰۰,۰۰۰'} unit={isOperator ? 'گفتگو' : 'ریال'} change="+۱۲.۸٪" icon={isOperator ? 'chat' : 'wallet'} tone="purple" note={isOperator ? '۳ گفتگوی جدید' : 'نسبت به ماه گذشته'} />
         <MetricCard title={isAdmin ? 'کاربران فعال' : isOperator ? 'رضایت مشتریان' : 'سفارش‌های فعال'} value={isOperator ? '۹۸' : isAdmin ? '۱,۲۸۴' : '۳'} unit={isOperator ? '٪' : 'عدد'} change="+۸.۲٪" icon={isAdmin ? 'users' : isOperator ? 'sparkle' : 'receipt'} tone="mint" note={isOperator ? 'عالی پیش می‌ری!' : 'نسبت به ماه گذشته'} />
         <MetricCard title={isAdmin ? 'سفارش‌های امروز' : isOperator ? 'سفارش تکمیل‌شده' : 'سفارش‌های تکمیل‌شده'} value={isOperator ? '۲۸' : isAdmin ? '۳۶' : '۱۸'} unit="عدد" change="+۴.۵٪" icon="check" tone="orange" note="نسبت به ماه گذشته" />
         <MetricCard title={isAdmin ? 'اپراتورهای آنلاین' : isOperator ? 'میانگین پاسخ‌گویی' : 'امتیاز شما'} value={isOperator ? '۲' : isAdmin ? '۸' : '۴.۹'} unit={isOperator ? 'دقیقه' : isAdmin ? 'نفر' : 'از ۵'} change={isOperator ? '−۱.۲٪' : '+۰.۶٪'} icon={isOperator ? 'clock' : isAdmin ? 'support' : 'sparkle'} tone="blue" note={isOperator ? 'سریع‌تر از هفته قبل' : 'بر اساس بازخوردها'} />
@@ -609,9 +814,9 @@ function Dashboard({
               <option>این هفته</option><option>این ماه</option><option>امسال</option>
             </select>
           </div>
-          <div className="chart-summary"><strong>{isAdmin ? '۸۴,۲۵۰,۰۰۰' : isOperator ? '۱۲۸' : '۵,۵۳۰,۰۰۰'} <small>{isOperator ? 'گفتگو' : 'تومان'}</small></strong><span className="chart-trend"><Icon name="arrow" size={13} /> ۱۲.۸٪</span><span className="summary-caption">در مقایسه با بازهٔ قبل</span></div>
+          <div className="chart-summary"><strong>{isAdmin ? '۸۴۲,۵۰۰,۰۰۰' : isOperator ? '۱۲۸' : '۵۵,۳۰۰,۰۰۰'} <small>{isOperator ? 'گفتگو' : 'ریال'}</small></strong><span className="chart-trend"><Icon name="arrow" size={13} /> ۱۲.۸٪</span><span className="summary-caption">در مقایسه با بازهٔ قبل</span></div>
           <div className="chart-area">
-            <div className="chart-y-labels"><span>۱۰ م</span><span>۷.۵ م</span><span>۵ م</span><span>۲.۵ م</span><span>۰</span></div>
+            <div className="chart-y-labels"><span>۱۰۰ م</span><span>۷۵ م</span><span>۵۰ م</span><span>۲۵ م</span><span>۰</span></div>
             <svg className="chart-svg" viewBox="0 0 650 180" preserveAspectRatio="none" role="img" aria-label="نمودار روند فعالیت در طول هفته">
               <defs><linearGradient id="chartFill" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stopColor="#7058f4" stopOpacity=".19" /><stop offset="100%" stopColor="#7058f4" stopOpacity="0" /></linearGradient></defs>
               <path className="grid-line" d="M0 10H650M0 50H650M0 90H650M0 130H650M0 170H650" />
@@ -627,7 +832,7 @@ function Dashboard({
           <div className="panel-heading"><div><h2>{isAdmin ? 'خلاصه کیف پول' : isOperator ? 'وضعیت امروز' : 'کیف پول من'}</h2><p>{isAdmin ? 'موجودی حساب پلتفرم' : isOperator ? 'گزارش فعالیت روزانه' : 'موجودی قابل استفاده'}</p></div><button className="more-button" aria-label="گزینه‌های بیشتر"><Icon name="more" /></button></div>
           <div className="balance-card">
             <div className="balance-top"><span>{isOperator ? 'گفتگوهای پاسخ‌داده‌شده' : 'موجودی فعلی'}</span><span className="balance-card-icon"><Icon name={isOperator ? 'chat' : 'wallet'} size={18} /></span></div>
-            <div className="balance-amount">{isOperator ? '۲۸' : isAdmin ? '۱۲,۸۴۰,۰۰۰' : '۲,۴۸۰,۰۰۰'} <small>{isOperator ? 'گفتگو' : 'تومان'}</small></div>
+            <div className="balance-amount">{isOperator ? '۲۸' : isAdmin ? '۱۲۸,۴۰۰,۰۰۰' : '۲۴,۸۰۰,۰۰۰'} <small>{isOperator ? 'گفتگو' : 'ریال'}</small></div>
             <div className="balance-footer"><span><i /> {isOperator ? '۴ گفتگوی تازه' : 'به‌روز در همین لحظه'}</span><Icon name="arrow" size={15} /></div>
           </div>
           <div className="balance-actions">
@@ -649,7 +854,7 @@ function Dashboard({
             <tbody>{filteredOrders.length ? filteredOrders.map((order) => (
               <tr key={order.id}>
                 <td><div className="service-cell"><span className={`service-icon ${order.tone}`}>{isOperator ? order.initials : <Icon name="grid" size={17} />}</span><strong>{isOperator ? 'مریم کریمی' : order.service}<small>{isOperator ? order.service : 'خدمات ایکس‌کافه'}</small></strong></div></td>
-                <td className="order-id">{order.id}</td><td>{order.date}</td><td className="amount-cell">{order.amount} <small>تومان</small></td>
+                <td className="order-id">{order.id}</td><td>{order.date}</td><td className="amount-cell">{order.amount} <small>ریال</small></td>
                 <td><span className={`status-pill ${order.tone === 'purple' ? 'in-progress' : 'complete'}`}><i />{isOperator && order.tone === 'purple' ? 'پاسخ جدید' : order.status}</span></td>
                 <td><button className="row-more" aria-label={`گزینه‌های ${order.id}`}><Icon name="more" size={18} /></button></td>
               </tr>
@@ -681,6 +886,8 @@ function ServiceCatalog({
   setSearch,
   onAddToCart,
   notice,
+  openServiceId,
+  onServiceRequestHandled,
 }: {
   catalog: ServiceCatalogData
   view: ServiceView
@@ -689,8 +896,12 @@ function ServiceCatalog({
   setSearch: (search: string) => void
   onAddToCart: (service: CatalogService, categoryName: string) => void
   notice: string
+  openServiceId: string | null
+  onServiceRequestHandled: () => void
 }) {
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null)
+  const [localSelectedServiceId, setLocalSelectedServiceId] = useState<string | null>(null)
+  const selectedServiceId = openServiceId ?? localSelectedServiceId
   const query = search.trim().toLocaleLowerCase('fa-IR')
   const visibleServices = catalog.services.filter((service) => {
     const category = catalog.categories.find((item) => item.id === service.categoryId)
@@ -701,20 +912,34 @@ function ServiceCatalog({
     return matchesSearch
   })
   const selectedCategory = catalog.categories.find((category) => category.id === selectedCategoryId)
+  const selectedService = catalog.services.find((service) => service.id === selectedServiceId)
+  const selectedServiceCategory = selectedService
+    ? catalog.categories.find((category) => category.id === selectedService.categoryId)
+    : undefined
   const categoryServices = selectedCategory
     ? catalog.services.filter((service) => service.categoryId === selectedCategory.id)
     : []
 
+  const closeSelectedService = () => {
+    if (openServiceId) onServiceRequestHandled()
+    else setLocalSelectedServiceId(null)
+  }
+
   useEffect(() => {
-    if (!selectedCategoryId) return
+    if (!selectedCategoryId && !selectedServiceId) return
 
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setSelectedCategoryId(null)
+      if (event.key !== 'Escape') return
+      if (selectedServiceId) {
+        if (openServiceId) onServiceRequestHandled()
+        else setLocalSelectedServiceId(null)
+      }
+      else setSelectedCategoryId(null)
     }
 
     window.addEventListener('keydown', closeOnEscape)
     return () => window.removeEventListener('keydown', closeOnEscape)
-  }, [selectedCategoryId])
+  }, [onServiceRequestHandled, openServiceId, selectedCategoryId, selectedServiceId])
 
   return (
     <>
@@ -728,15 +953,16 @@ function ServiceCatalog({
         </label>}
       {notice && <p className="cart-notice" role="status" aria-live="polite">{notice}</p>}
       {view === 'categories' ? (
-        <div className="service-grid">
+        <div className="service-grid category-grid">
           {catalog.categories.map((category, index) => {
             const count = catalog.services.filter((service) => service.categoryId === category.id).length
             const tone = ['violet', 'blue', 'mint'][index % 3]
 
-            return <article className="service-card" key={category.id}>
-              <span className={`feature-icon ${tone}`}><Icon name="grid" size={22} /></span>
-              <h2>{category.name}</h2>
-              <p>{category.description}</p>
+            return <article className="service-card category-service-card" key={category.id}>
+              <div className="service-card-title-row">
+                <span className={`feature-icon ${tone}`}>{category.icon ? <img className="catalog-icon-image" src={category.icon} alt="" /> : <Icon name="grid" size={22} />}</span>
+                <h2>{category.name}</h2>
+              </div>
               <div className="category-card-footer">
                 <span>{new Intl.NumberFormat('fa-IR').format(count)} خدمت</span>
                 <button type="button" aria-haspopup="dialog" onClick={() => setSelectedCategoryId(category.id)}>دیدن خدمات <Icon name="arrow" size={15} /></button>
@@ -750,16 +976,13 @@ function ServiceCatalog({
             const category = catalog.categories.find((item) => item.id === service.categoryId)
             const tone = ['violet', 'blue', 'mint'][index % 3]
 
-            return <article className="service-card" key={service.id}>
-              <span className={`feature-icon ${tone}`}><Icon name="sparkle" size={22} /></span>
-              <span className="service-category-label">{category?.name ?? 'خدمات'}</span>
-              <h2>{service.name}</h2>
-              <p>{service.description}</p>
-              <div className="service-card-footer">
-                <strong>{new Intl.NumberFormat('fa-IR').format(service.price)} <small>تومان</small></strong>
-                <button className="add-to-cart-button" onClick={() => onAddToCart(service, category?.name ?? 'خدمات')}><Icon name="cart" size={15} /> افزودن به سبد</button>
-              </div>
-            </article>
+            return <PublicServiceCard
+              key={service.id}
+              service={service}
+              categoryName={category?.name ?? 'خدمات'}
+              tone={tone}
+              onSelect={() => setLocalSelectedServiceId(service.id)}
+            />
           })}
           {visibleServices.length === 0 && <p className="catalog-empty">خدمتی با این عبارت پیدا نشد.</p>}
         </div>
@@ -767,7 +990,10 @@ function ServiceCatalog({
       {selectedCategory && <div className="public-service-dialog-backdrop" onClick={(event) => { if (event.target === event.currentTarget) setSelectedCategoryId(null) }}>
         <section className="public-service-dialog" role="dialog" aria-modal="true" aria-labelledby="public-category-services-title">
           <div className="public-service-dialog-heading">
-            <div><h2 id="public-category-services-title">{selectedCategory.name}</h2><p>{selectedCategory.description || 'خدمات این دسته‌بندی'}</p></div>
+            <div className="public-category-heading">
+              <span className="feature-icon violet">{selectedCategory.icon ? <img className="catalog-icon-image" src={selectedCategory.icon} alt="" /> : <Icon name="grid" size={20} />}</span>
+              <h2 id="public-category-services-title">{selectedCategory.name}</h2>
+            </div>
             <button type="button" className="close-category-dialog" aria-label="بستن خدمات" onClick={() => setSelectedCategoryId(null)}>×</button>
           </div>
           {notice && <p className="cart-notice" role="status" aria-live="polite">{notice}</p>}
@@ -775,21 +1001,68 @@ function ServiceCatalog({
             {categoryServices.map((service, index) => {
               const tone = ['violet', 'blue', 'mint'][index % 3]
 
-              return <article className="service-card" key={service.id}>
-                <span className={`feature-icon ${tone}`}><Icon name="sparkle" size={22} /></span>
-                <h2>{service.name}</h2>
-                <p>{service.description}</p>
-                <div className="service-card-footer">
-                  <strong>{new Intl.NumberFormat('fa-IR').format(service.price)} <small>تومان</small></strong>
-                  <button className="add-to-cart-button" onClick={() => onAddToCart(service, selectedCategory.name)}><Icon name="cart" size={15} /> افزودن به سبد</button>
-                </div>
-              </article>
+              return <PublicServiceCard
+                key={service.id}
+                service={service}
+                categoryName={selectedCategory.name}
+                tone={tone}
+                onSelect={() => setLocalSelectedServiceId(service.id)}
+              />
             })}
           </div>
           {categoryServices.length === 0 && <p className="catalog-empty">هنوز خدمتی در این دسته ثبت نشده است.</p>}
         </section>
       </div>}
+      {selectedService && <div className="public-service-details-backdrop" onClick={(event) => { if (event.target === event.currentTarget) closeSelectedService() }}>
+        <section className="public-service-details-dialog" role="dialog" aria-modal="true" aria-labelledby="public-service-details-title">
+          <div className="public-service-details-heading">
+            <div className="public-service-details-title-row">
+              <span className="feature-icon violet">{selectedService.icon ? <img className="catalog-icon-image" src={selectedService.icon} alt="" /> : <Icon name="sparkle" size={22} />}</span>
+              <div>
+                <span className="service-category-label">{selectedServiceCategory?.name ?? 'خدمات'}</span>
+                <h2 id="public-service-details-title">{selectedService.name}</h2>
+              </div>
+            </div>
+            <button type="button" className="close-category-dialog" aria-label="بستن جزئیات خدمت" onClick={closeSelectedService}>×</button>
+          </div>
+          <p className="public-service-details-description">{selectedService.description || 'توضیحی برای این خدمت ثبت نشده است.'}</p>
+          <div className="public-service-details-footer">
+            <strong>{new Intl.NumberFormat('fa-IR').format(selectedService.price)} <small>ریال</small></strong>
+            <button type="button" className="primary-button add-to-cart-button" onClick={() => {
+              onAddToCart(selectedService, selectedServiceCategory?.name ?? 'خدمات')
+              closeSelectedService()
+            }}><Icon name="cart" size={16} /> افزودن به سبد خرید</button>
+          </div>
+        </section>
+      </div>}
     </>
+  )
+}
+
+function PublicServiceCard({ service, categoryName, tone, onSelect }: {
+  service: CatalogService
+  categoryName: string
+  tone: string
+  onSelect: () => void
+}) {
+  const handleKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    event.preventDefault()
+    onSelect()
+  }
+
+  return (
+    <article className="service-card service-card-selectable" role="button" tabIndex={0} aria-label={`مشاهده جزئیات ${service.name}`} onClick={onSelect} onKeyDown={handleKeyDown}>
+      <span className="service-category-label">{categoryName}</span>
+      <div className="service-card-title-row">
+        <span className={`feature-icon ${tone}`}>{service.icon ? <img className="catalog-icon-image" src={service.icon} alt="" /> : <Icon name="sparkle" size={22} />}</span>
+        <h2>{service.name}</h2>
+      </div>
+      <div className="service-card-footer">
+        <strong>{new Intl.NumberFormat('fa-IR').format(service.price)} <small>ریال</small></strong>
+        <span className="service-card-details-link">جزئیات <Icon name="arrow" size={14} /></span>
+      </div>
+    </article>
   )
 }
 
@@ -836,15 +1109,15 @@ function CartPage({
                   <span>{item.categoryName}</span>
                   <h2>{item.name}</h2>
                   <p>{item.description}</p>
-                  <strong className="cart-mobile-price">{formatPrice(item.price)} <small>تومان</small></strong>
+                  <strong className="cart-mobile-price">{formatPrice(item.price)} <small>ریال</small></strong>
                 </div>
-                <strong className="cart-unit-price">{formatPrice(item.price)} <small>تومان</small></strong>
+                <strong className="cart-unit-price">{formatPrice(item.price)} <small>ریال</small></strong>
                 <div className="quantity-control" aria-label={`تعداد ${item.name}`}>
                   <button aria-label={`افزایش تعداد ${item.name}`} onClick={() => onChangeQuantity(item.serviceId, 1)}><Icon name="plus" size={14} /></button>
                   <span>{new Intl.NumberFormat('fa-IR').format(item.quantity)}</span>
                   <button aria-label={`کاهش تعداد ${item.name}`} onClick={() => onChangeQuantity(item.serviceId, -1)}><Icon name="minus" size={14} /></button>
                 </div>
-                <strong className="cart-line-price">{formatPrice(item.price * item.quantity)} <small>تومان</small></strong>
+                <strong className="cart-line-price">{formatPrice(item.price * item.quantity)} <small>ریال</small></strong>
                 <button className="cart-remove-button" aria-label={`حذف ${item.name} از سبد`} onClick={() => onRemove(item.serviceId)}><Icon name="trash" size={17} /></button>
               </article>
             ))}
@@ -852,13 +1125,39 @@ function CartPage({
           <aside className="cart-summary panel">
             <h2>خلاصه سفارش</h2>
             <div><span>تعداد خدمات</span><strong>{new Intl.NumberFormat('fa-IR').format(totalQuantity)}</strong></div>
-            <div className="cart-total"><span>مبلغ کل</span><strong>{formatPrice(totalPrice)} <small>تومان</small></strong></div>
+            <div className="cart-total"><span>مبلغ کل</span><strong>{formatPrice(totalPrice)} <small>ریال</small></strong></div>
             <p>هزینه نهایی پس از تأیید سفارش مشخص می‌شود.</p>
             <button className="primary-button" onClick={onBrowse}>ادامه انتخاب خدمات <Icon name="arrow" size={15} /></button>
           </aside>
         </div>
       )}
     </section>
+  )
+}
+
+function IconUploadField({ label, value, onUpload, onRemove }: {
+  label: string
+  value: string
+  onUpload: (file: File) => void
+  onRemove: () => void
+}) {
+  return (
+    <div className="settings-field icon-upload-field">
+      <span>{label}</span>
+      <div className="icon-upload-row">
+        <label className="icon-upload-button">
+          <input type="file" accept="image/*" aria-label={label} onChange={(event) => {
+            const file = event.currentTarget.files?.[0]
+            if (file) onUpload(file)
+            event.currentTarget.value = ''
+          }} />
+          {value ? <img src={value} alt="" /> : <Icon name="plus" size={17} />}
+          <span>{value ? 'تغییر آیکن' : 'افزودن آیکن'}</span>
+        </label>
+        {value && <button type="button" className="icon-upload-remove" onClick={onRemove}>حذف آیکن</button>}
+      </div>
+      <small className="icon-upload-hint">تصویر تا ۵ مگابایت؛ برای ذخیره سبک‌سازی می‌شود.</small>
+    </div>
   )
 }
 
@@ -881,6 +1180,7 @@ function CatalogManager({
 }) {
   const [categoryName, setCategoryName] = useState('')
   const [categoryDescription, setCategoryDescription] = useState('')
+  const [categoryIcon, setCategoryIcon] = useState('')
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null)
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null)
   const [openCategoryMenuId, setOpenCategoryMenuId] = useState<string | null>(null)
@@ -891,15 +1191,24 @@ function CatalogManager({
   const [serviceName, setServiceName] = useState('')
   const [serviceDescription, setServiceDescription] = useState('')
   const [servicePrice, setServicePrice] = useState('')
+  const [serviceIcon, setServiceIcon] = useState('')
   const [serviceCategoryId, setServiceCategoryId] = useState(catalog.categories[0]?.id ?? '')
   const [editServiceName, setEditServiceName] = useState('')
   const [editServiceDescription, setEditServiceDescription] = useState('')
   const [editServicePrice, setEditServicePrice] = useState('')
   const [editServiceCategoryId, setEditServiceCategoryId] = useState('')
+  const [editServiceIcon, setEditServiceIcon] = useState('')
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const longPressTimer = useRef<number | null>(null)
   const longPressTriggered = useRef(false)
+
+  const uploadIcon = (file: File, setIcon: (icon: string) => void) => {
+    void createCatalogIcon(file).then(setIcon).catch((cause: unknown) => {
+      setError(cause instanceof Error ? cause.message : 'آیکن بارگذاری نشد.')
+      setSuccess('')
+    })
+  }
 
   const clearLongPress = () => {
     if (longPressTimer.current !== null) {
@@ -958,10 +1267,10 @@ function CatalogManager({
     }
 
     if (editingCategoryId) {
-      updateCategory({ id: editingCategoryId, name, description: categoryDescription.trim() })
+      updateCategory({ id: editingCategoryId, name, description: categoryDescription.trim(), icon: categoryIcon || undefined })
       setSuccess(`دسته‌بندی «${name}» ویرایش شد.`)
     } else {
-      const category = { id: createCatalogId('category'), name, description: categoryDescription.trim() }
+      const category = { id: createCatalogId('category'), name, description: '', icon: categoryIcon || undefined }
       addCategory(category)
       setServiceCategoryId(category.id)
       setSuccess(`دسته‌بندی «${name}» ساخته شد.`)
@@ -969,6 +1278,7 @@ function CatalogManager({
 
     setCategoryName('')
     setCategoryDescription('')
+    setCategoryIcon('')
     setEditingCategoryId(null)
     setError('')
   }
@@ -976,6 +1286,7 @@ function CatalogManager({
   const beginCategoryEdit = (category: CatalogCategory) => {
     setCategoryName(category.name)
     setCategoryDescription(category.description)
+    setCategoryIcon(category.icon ?? '')
     setEditingCategoryId(category.id)
     setOpenCategoryMenuId(null)
     setError('')
@@ -985,6 +1296,7 @@ function CatalogManager({
   const cancelCategoryEdit = () => {
     setCategoryName('')
     setCategoryDescription('')
+    setCategoryIcon('')
     setEditingCategoryId(null)
     setError('')
   }
@@ -1053,10 +1365,12 @@ function CatalogManager({
       name,
       description: serviceDescription.trim(),
       price,
+      icon: serviceIcon || undefined,
     })
     setServiceName('')
     setServiceDescription('')
     setServicePrice('')
+    setServiceIcon('')
     setError('')
     setSuccess(`خدمت «${name}» به «${category.name}» اضافه شد.`)
   }
@@ -1067,6 +1381,7 @@ function CatalogManager({
     setEditServiceDescription(service.description)
     setEditServicePrice(String(service.price))
     setEditServiceCategoryId(service.categoryId)
+    setEditServiceIcon(service.icon ?? '')
     setOpenServiceMenuId(null)
   }
 
@@ -1076,6 +1391,7 @@ function CatalogManager({
     setEditServiceDescription('')
     setEditServicePrice('')
     setEditServiceCategoryId('')
+    setEditServiceIcon('')
     setError('')
   }
 
@@ -1111,6 +1427,7 @@ function CatalogManager({
       name,
       description: editServiceDescription.trim(),
       price,
+      icon: editServiceIcon || undefined,
     })
     cancelServiceEdit()
     setError('')
@@ -1143,7 +1460,7 @@ function CatalogManager({
         <form className="catalog-form" onSubmit={handleAddCategory}>
           <h3>{editingCategoryId ? 'ویرایش دسته‌بندی' : 'دسته‌بندی جدید'}</h3>
           <label className="settings-field"><span>نام دسته‌بندی</span><input value={categoryName} onChange={(event) => setCategoryName(event.target.value)} placeholder="مثلاً طراحی و برندینگ" required /></label>
-          <label className="settings-field"><span>توضیحات (اختیاری)</span><input value={categoryDescription} onChange={(event) => setCategoryDescription(event.target.value)} placeholder="توضیح کوتاهی درباره این دسته" /></label>
+          <IconUploadField label="آیکن دسته‌بندی" value={categoryIcon} onUpload={(file) => uploadIcon(file, setCategoryIcon)} onRemove={() => setCategoryIcon('')} />
           <div className="catalog-form-actions">
             <button className="primary-button catalog-submit" type="submit"><Icon name={editingCategoryId ? 'check' : 'plus'} size={16} /> {editingCategoryId ? 'ذخیره ویرایش' : 'ساخت دسته‌بندی'}</button>
             {editingCategoryId && <button className="catalog-cancel-edit" type="button" onClick={cancelCategoryEdit}>انصراف</button>}
@@ -1155,7 +1472,8 @@ function CatalogManager({
           <label className="settings-field"><span>دسته‌بندی</span><select value={serviceCategoryId} onChange={(event) => setServiceCategoryId(event.target.value)} required disabled={catalog.categories.length === 0}><option value="" disabled>انتخاب دسته‌بندی</option>{catalog.categories.map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}</select></label>
           <label className="settings-field"><span>نام خدمت</span><input value={serviceName} onChange={(event) => setServiceName(event.target.value)} placeholder="مثلاً طراحی لوگو" required /></label>
           <label className="settings-field"><span>توضیحات خدمت (اختیاری)</span><input value={serviceDescription} onChange={(event) => setServiceDescription(event.target.value)} placeholder="شرح کوتاه خدمت" /></label>
-          <label className="settings-field"><span>قیمت (تومان)</span><input type="number" min="1" step="1" inputMode="numeric" value={servicePrice} onChange={(event) => setServicePrice(event.target.value)} placeholder="مثلاً ۵۰۰۰۰۰" required /></label>
+          <label className="settings-field"><span>قیمت (ریال)</span><input type="number" min="1" step="1" inputMode="numeric" value={servicePrice} onChange={(event) => setServicePrice(event.target.value)} placeholder="مثلاً ۵۰۰۰۰۰۰" required /></label>
+          <IconUploadField label="آیکن خدمت" value={serviceIcon} onUpload={(file) => uploadIcon(file, setServiceIcon)} onRemove={() => setServiceIcon('')} />
           <button className="primary-button catalog-submit" type="submit" disabled={catalog.categories.length === 0}><Icon name="plus" size={16} /> ثبت خدمت</button>
         </form>
       </div>
@@ -1196,7 +1514,7 @@ function CatalogManager({
                   setSelectedCategoryId(category.id)
                 }}
               >
-                <span className="feature-icon violet"><Icon name="grid" size={18} /></span>
+                <span className="feature-icon violet">{category.icon ? <img className="catalog-icon-image" src={category.icon} alt="" /> : <Icon name="grid" size={18} />}</span>
                 <span className="managed-category-copy"><strong>{category.name}</strong><small>{category.description || 'بدون توضیحات'}</small></span>
                 <span className="category-service-count">{new Intl.NumberFormat('fa-IR').format(categoryServices.length)} خدمت</span>
                 <Icon className="category-expander" name="arrow" size={15} />
@@ -1218,7 +1536,10 @@ function CatalogManager({
       {selectedCategory && <div className="category-dialog-backdrop service-dialog-backdrop" onClick={(event) => { if (event.target === event.currentTarget) setSelectedCategoryId(null) }}>
         <section className="category-services-dialog" role="dialog" aria-modal="true" aria-labelledby="category-services-title">
           <div className="category-services-heading">
-            <div><h3 id="category-services-title">{selectedCategory.name}</h3><p>{selectedCategory.description || 'خدمات این دسته‌بندی'}</p></div>
+            <div className="category-services-heading-title">
+              <span className="feature-icon violet">{selectedCategory.icon ? <img className="catalog-icon-image" src={selectedCategory.icon} alt="" /> : <Icon name="grid" size={20} />}</span>
+              <h3 id="category-services-title">{selectedCategory.name}</h3>
+            </div>
             <button type="button" className="close-category-dialog" aria-label="بستن خدمات" onClick={() => setSelectedCategoryId(null)}>×</button>
           </div>
           {error && <p className="catalog-feedback error" role="alert">{error}</p>}
@@ -1251,7 +1572,8 @@ function CatalogManager({
                     <label className="settings-field"><span>دسته‌بندی</span><select value={editServiceCategoryId} onChange={(event) => setEditServiceCategoryId(event.target.value)} required>{catalog.categories.map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}</select></label>
                     <label className="settings-field"><span>نام خدمت</span><input value={editServiceName} onChange={(event) => setEditServiceName(event.target.value)} required /></label>
                     <label className="settings-field"><span>توضیحات</span><input value={editServiceDescription} onChange={(event) => setEditServiceDescription(event.target.value)} /></label>
-                    <label className="settings-field"><span>قیمت (تومان)</span><input type="number" min="1" step="1" value={editServicePrice} onChange={(event) => setEditServicePrice(event.target.value)} required /></label>
+                    <label className="settings-field"><span>قیمت (ریال)</span><input type="number" min="1" step="1" value={editServicePrice} onChange={(event) => setEditServicePrice(event.target.value)} required /></label>
+                    <IconUploadField label="آیکن خدمت" value={editServiceIcon} onUpload={(file) => uploadIcon(file, setEditServiceIcon)} onRemove={() => setEditServiceIcon('')} />
                     <div className="managed-service-edit-actions">
                       <button className="primary-button" type="submit">ذخیره</button>
                       <button className="catalog-cancel-edit" type="button" onClick={cancelServiceEdit}>انصراف</button>
@@ -1259,8 +1581,11 @@ function CatalogManager({
                   </form>
                 ) : (
                   <>
-                    <div className="managed-service-info"><strong>{service.name}</strong><small>{service.description || 'بدون توضیحات'}</small></div>
-                    <strong className="managed-service-price">{new Intl.NumberFormat('fa-IR').format(service.price)} <small>تومان</small></strong>
+                    <div className="managed-service-info">
+                      <span className="managed-service-icon">{service.icon ? <img className="catalog-icon-image" src={service.icon} alt="" /> : <Icon name="sparkle" size={17} />}</span>
+                      <div className="managed-service-copy"><strong>{service.name}</strong><small>{service.description || 'بدون توضیحات'}</small></div>
+                    </div>
+                    <strong className="managed-service-price">{new Intl.NumberFormat('fa-IR').format(service.price)} <small>ریال</small></strong>
                     <div className="service-menu-wrap">
                       <button className="service-menu-trigger" type="button" aria-label={`عملیات خدمت ${service.name}`} aria-haspopup="menu" aria-expanded={serviceMenuOpen} onClick={() => setOpenServiceMenuId((current) => current === service.id ? null : service.id)}>
                         <Icon className="vertical-more-icon" name="more" size={18} />
@@ -1304,39 +1629,184 @@ function CatalogManager({
   )
 }
 
-function SectionPage({ section, role }: { section: string; role: Role }) {
+function SectionPage({
+  section,
+  role,
+  events = [],
+  catalog,
+  onOpenService,
+  onOpenContact,
+}: {
+  section: string
+  role: Role
+  events?: AppEvent[]
+  catalog?: ServiceCatalogData
+  onOpenService?: (serviceId: string) => void
+  onOpenContact?: () => void
+}) {
   const isServices = section === 'خدمات'
   const isEvents = section === 'رویدادها'
   const isWallet = section === 'کیف پول'
-  const title = isServices ? 'خدماتی برای یک تجربه بهتر' : isEvents ? 'رویدادهای پیشِ رو' : isWallet ? 'کیف پول و تراکنش‌ها' : 'به خانه خوش آمدی'
-  const description = isServices ? 'هر چیزی که برای رشد و ساختن نیاز داری، همین‌جاست.' : isEvents ? 'دورهمی‌ها و اتفاق‌های تازهٔ جامعهٔ ایکس‌کافه را از دست نده.' : isWallet ? 'موجودی و گردش حساب خودت را یک‌جا مدیریت کن.' : 'فضای شخصی تو برای تجربهٔ خدمات بهتر.'
+  const isAbout = section === 'درباره ما'
+  const isContact = section === 'تماس با ما'
+  const title = isServices
+    ? 'خدماتی برای یک تجربه بهتر'
+    : isEvents
+      ? 'رویدادهای پیشِ رو'
+      : isWallet
+        ? 'کیف پول و تراکنش‌ها'
+        : isAbout
+          ? 'دربارهٔ ایکس‌کافه'
+          : isContact
+            ? 'با ما در تماس باش'
+            : 'به خانه خوش آمدی'
+  const description = isServices
+    ? 'هر چیزی که برای رشد و ساختن نیاز داری، همین‌جاست.'
+    : isEvents
+      ? 'دورهمی‌ها و اتفاق‌های تازهٔ جامعهٔ ایکس‌کافه را از دست نده.'
+      : isWallet
+        ? 'موجودی و گردش حساب خودت را یک‌جا مدیریت کن.'
+        : isAbout
+          ? 'اینجا دربارهٔ فضای ایکس‌کافه و کاری که انجام می‌دهیم بیشتر بدان.'
+          : isContact
+            ? 'برای پرسش یا پیگیری سفارش، از راه گفت‌وگو با پشتیبانی با ما در ارتباط باش.'
+            : 'فضای شخصی تو برای تجربهٔ خدمات بهتر.'
   return (
     <>
-      <div className="welcome-row section-welcome"><div><div className="eyebrow"><span className="eyebrow-dot" /> {section}</div><h1>{title}</h1><p>{description}</p></div><button className="primary-button"><Icon name={isEvents ? 'calendar' : isWallet ? 'plus' : 'sparkle'} size={17} />{isEvents ? 'تقویم رویدادها' : isWallet ? 'افزایش موجودی' : 'شروع کن'}</button></div>
+      <div className="welcome-row section-welcome">
+        <div><div className="eyebrow"><span className="eyebrow-dot" /> {section}</div><h1>{title}</h1><p>{description}</p></div>
+        {!isAbout && !isContact && <button className="primary-button" onClick={isEvents ? () => document.getElementById('events-list')?.scrollIntoView({ behavior: 'smooth' }) : undefined}><Icon name={isEvents ? 'calendar' : isWallet ? 'plus' : 'sparkle'} size={17} />{isEvents ? 'تقویم رویدادها' : isWallet ? 'افزایش موجودی' : 'شروع کن'}</button>}
+      </div>
       {isWallet ? (
         <div className="wallet-view">
-          <div className="wallet-highlight"><div><span>موجودی کیف پول شما</span><strong>۲,۴۸۰,۰۰۰ <small>تومان</small></strong><p><i /> آخرین به‌روزرسانی همین حالا</p></div><span className="wallet-art"><Icon name="wallet" size={35} /></span></div>
+          <div className="wallet-highlight"><div><span>موجودی کیف پول شما</span><strong>۲۴,۸۰۰,۰۰۰ <small>ریال</small></strong><p><i /> آخرین به‌روزرسانی همین حالا</p></div><span className="wallet-art"><Icon name="wallet" size={35} /></span></div>
           <div className="wallet-quick"><button><Icon name="plus" /> افزایش موجودی</button><button><Icon name="receipt" /> همه تراکنش‌ها</button></div>
-          <div className="panel wallet-transaction"><h2>تراکنش‌های اخیر</h2>{orders.map((order) => <div className="transaction-row" key={order.id}><span className={`service-icon ${order.tone}`}><Icon name="receipt" size={16} /></span><div><strong>{order.service}</strong><small>{order.date}</small></div><b>− {order.amount} <small>تومان</small></b></div>)}</div>
+          <div className="panel wallet-transaction"><h2>تراکنش‌های اخیر</h2>{orders.map((order) => <div className="transaction-row" key={order.id}><span className={`service-icon ${order.tone}`}><Icon name="receipt" size={16} /></span><div><strong>{order.service}</strong><small>{order.date}</small></div><b>− {order.amount} <small>ریال</small></b></div>)}</div>
         </div>
+      ) : isEvents ? (
+        <div className="event-grid" id="events-list">
+          {events.length === 0 ? (
+            <section className="panel event-empty">
+              <span className="event-empty-icon"><Icon name="calendar" size={24} /></span>
+              <h2>هنوز رویدادی ثبت نشده است</h2>
+              <p>رویدادهای تازه پس از ثبت در پنل مدیریت، اینجا نمایش داده می‌شوند.</p>
+            </section>
+          ) : [...events].sort((first, second) => first.startDate.localeCompare(second.startDate)).map((event) => {
+            const service = catalog?.services.find((item) => item.id === event.serviceId)
+            const category = catalog?.categories.find((item) => item.id === event.categoryId)
+              ?? catalog?.categories.find((item) => item.id === service?.categoryId)
+            return (
+              <AppEventCard
+                key={event.id}
+                event={event}
+                category={category}
+                service={service}
+                onOpenService={onOpenService}
+              />
+            )
+          })}
+        </div>
+      ) : isAbout ? (
+        <section className="panel info-page-panel">
+          <span className="feature-icon violet"><Icon name="users" size={22} /></span>
+          <div>
+            <h2>خدمات و تجربه‌ها در یک فضای ساده</h2>
+            <p>ایکس‌کافه فضایی یکپارچه برای پیدا کردن و استفاده از خدمات، دنبال‌کردن رویدادها و مدیریت سفارش‌ها فراهم می‌کند؛ پشتیبانی هم برای راهنمایی همراه شماست.</p>
+          </div>
+        </section>
+      ) : isContact ? (
+        <section className="panel info-page-panel">
+          <span className="feature-icon mint"><Icon name="support" size={22} /></span>
+          <div>
+            <h2>چطور می‌تونیم کمک کنیم؟</h2>
+            <p>برای پرسش دربارهٔ خدمات یا پیگیری سفارش، از طریق گفت‌وگو با پشتیبانی با ما در ارتباط باش.</p>
+            <button className="primary-button" type="button" onClick={onOpenContact}><Icon name="chat" size={17} /> گفتگو با پشتیبانی</button>
+          </div>
+        </section>
       ) : (
         <div className="feature-grid">{(isServices ? [
           ['طراحی و برندینگ', 'از ایده تا هویت بصری ماندگار', 'sparkle', 'violet'],
           ['توسعه وب‌سایت', 'تجربه‌ای حرفه‌ای برای کسب‌وکار تو', 'grid', 'blue'],
           ['مشاوره و پشتیبانی', 'همراهی در تمام قدم‌های مسیر', 'support', 'mint'],
-        ] as [string, string, IconName, string][] : isEvents ? [
-          ['دورهمی خلاقانه', '۳۰ آبان · پنج‌شنبه، ساعت ۱۸', 'sparkle', 'violet'],
-          ['کارگاه تجربه کاربری', '۵ آذر · سه‌شنبه، ساعت ۱۶', 'grid', 'blue'],
-          ['شب شبکه‌سازی', '۱۲ آذر · پنج‌شنبه، ساعت ۱۹', 'users', 'mint'],
         ] as [string, string, IconName, string][] : [
           ['سفارش‌های من', 'پیگیری وضعیت و جزئیات سفارش‌ها', 'receipt', 'violet'],
           ['گفتگو با پشتیبانی', 'پاسخ‌گویی سریع، همیشه کنار تو', 'chat', 'blue'],
           [`پنل ${roleLabels[role]}`, 'مدیریت حساب و تنظیمات', 'user', 'mint'],
         ] as [string, string, IconName, string][]).map(([name, text, icon, tone]) => <article className="feature-card" key={name}><span className={`feature-icon ${tone}`}><Icon name={icon} size={22} /></span><h2>{name}</h2><p>{text}</p><button>مشاهده جزئیات <Icon name="arrow" size={15} /></button></article>)}</div>
       )}
-      <div className="section-bottom-card"><div className="note-icon"><Icon name="sparkle" /></div><div><strong>تجربه‌ای که به سلیقهٔ تو ساخته شده</strong><p>هر روز خدمات و پیشنهادهای تازه‌ای به ایکس‌کافه اضافه می‌کنیم.</p></div></div>
+      {!isEvents && !isAbout && !isContact && <div className="section-bottom-card"><div className="note-icon"><Icon name="sparkle" /></div><div><strong>تجربه‌ای که به سلیقهٔ تو ساخته شده</strong><p>هر روز خدمات و پیشنهادهای تازه‌ای به ایکس‌کافه اضافه می‌کنیم.</p></div></div>}
     </>
   )
+}
+
+function AppEventCard({
+  event,
+  category,
+  service,
+  onOpenService,
+}: {
+  event: AppEvent
+  category?: CatalogCategory
+  service?: CatalogService
+  onOpenService?: (serviceId: string) => void
+}) {
+  const remainingDays = daysUntil(event.endDate)
+  const countdownState = remainingDays < 0 ? 'ended' : remainingDays === 0 ? 'last-day' : 'remaining'
+  const countdownText = remainingDays < 0
+    ? 'پایان‌یافته'
+    : remainingDays === 0
+      ? 'آخرین روز'
+      : `${new Intl.NumberFormat('fa-IR').format(remainingDays)} روز مانده`
+  const headingContent = (
+    <>
+      <span className="feature-icon violet"><Icon name="calendar" size={21} /></span>
+      <h2>{event.title}</h2>
+      {service && onOpenService && <span className="event-card-view-service">مشاهده خدمت</span>}
+    </>
+  )
+  const content = (
+    <>
+      <div className="event-card-content">
+        {service && onOpenService ? (
+          <button
+            type="button"
+            className="event-card-heading event-card-heading-actionable"
+            aria-label={`مشاهده خدمت ${service.name} در رویداد ${event.title}`}
+            onClick={() => onOpenService(service.id)}
+          >
+            {headingContent}
+          </button>
+        ) : (
+          <div className="event-card-heading">{headingContent}</div>
+        )}
+        <div className="event-date-grid">
+          <div className="event-date-box">
+            <div className="event-date-line">
+              <span className="event-date-caption">تاریخ شروع</span>
+              <time dateTime={event.startDate}>{formatPersianDate(event.startDate)}</time>
+            </div>
+          </div>
+          <div className={`event-date-box event-date-box-end ${countdownState}`}>
+            <span className={`event-countdown ${countdownState}`}>{countdownText}</span>
+            <div className="event-date-line">
+              <span className="event-date-caption">تاریخ پایان</span>
+              <time dateTime={event.endDate}>{formatPersianDate(event.endDate)}</time>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="event-card-links">
+        {category && <span className="event-category-action">دسته‌بندی مرتبط: {category.name}</span>}
+        {service ? (
+          <span className="event-service-name">خدمت مرتبط: {service.name}</span>
+        ) : (
+          <span className="event-unlinked-service">بدون خدمت مرتبط</span>
+        )}
+      </div>
+    </>
+  )
+
+  return <article className="event-card">{content}</article>
 }
 
 function PanelPage({
@@ -1344,6 +1814,7 @@ function PanelPage({
   role,
   search,
   catalog,
+  events,
   siteStyle,
   setSiteStyle,
   addCategory,
@@ -1352,11 +1823,14 @@ function PanelPage({
   deleteCategory,
   updateService,
   deleteService,
+  addEvent,
+  deleteEvent,
 }: {
   page: string
   role: Role
   search: string
   catalog: ServiceCatalogData
+  events: AppEvent[]
   siteStyle: SiteStyle
   setSiteStyle: (siteStyle: SiteStyle) => void
   addCategory: (category: CatalogCategory) => void
@@ -1365,6 +1839,8 @@ function PanelPage({
   deleteCategory: (categoryId: string) => void
   updateService: (service: CatalogService) => void
   deleteService: (serviceId: string) => void
+  addEvent: (event: AppEvent) => void
+  deleteEvent: (eventId: string) => void
 }) {
   const [adminSettingsSection, setAdminSettingsSection] = useState<AdminSettingsSection>('profile')
   const pageDescriptions: Record<string, string> = {
@@ -1396,12 +1872,15 @@ function PanelPage({
           setSiteStyle={setSiteStyle}
           role={role}
           catalog={catalog}
+          events={events}
           addCategory={addCategory}
           addService={addService}
           updateCategory={updateCategory}
           deleteCategory={deleteCategory}
           updateService={updateService}
           deleteService={deleteService}
+          addEvent={addEvent}
+          deleteEvent={deleteEvent}
         />
       ) : page === 'تنظیمات' || page === 'حساب من' ? (
         <div className="settings-stack">
@@ -1465,6 +1944,183 @@ function ProfileSettings({ role }: { role: Role }) {
   )
 }
 
+function EventManager({
+  events,
+  catalog,
+  addEvent,
+  deleteEvent,
+}: {
+  events: AppEvent[]
+  catalog: ServiceCatalogData
+  addEvent: (event: AppEvent) => void
+  deleteEvent: (eventId: string) => void
+}) {
+  const [title, setTitle] = useState('')
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
+  const [categoryId, setCategoryId] = useState('')
+  const [serviceId, setServiceId] = useState('')
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
+  const availableServices = categoryId
+    ? catalog.services.filter((service) => service.categoryId === categoryId)
+    : catalog.services
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const eventTitle = title.trim()
+    if (!eventTitle) {
+      setError('عنوان رویداد را وارد کنید.')
+      return
+    }
+    if (!isDateOnly(startDate) || !isDateOnly(endDate)) {
+      setError('تاریخ شروع و پایان را انتخاب کنید.')
+      return
+    }
+    if (startDate > endDate) {
+      setError('تاریخ پایان نمی‌تواند پیش از تاریخ شروع باشد.')
+      return
+    }
+    if (categoryId && !catalog.categories.some((category) => category.id === categoryId)) {
+      setError('دسته‌بندی انتخاب‌شده دیگر در دسترس نیست.')
+      return
+    }
+    const linkedService = catalog.services.find((service) => service.id === serviceId)
+    if (serviceId && (!linkedService || (categoryId && linkedService.categoryId !== categoryId))) {
+      setError('خدمت انتخاب‌شده دیگر در دسترس نیست.')
+      return
+    }
+
+    addEvent({
+      id: createEventId(),
+      title: eventTitle,
+      startDate,
+      endDate,
+      ...((categoryId || linkedService?.categoryId) ? { categoryId: categoryId || linkedService?.categoryId } : {}),
+      ...(serviceId ? { serviceId } : {}),
+    })
+    setTitle('')
+    setStartDate('')
+    setEndDate('')
+    setCategoryId('')
+    setServiceId('')
+    setError('')
+    setSuccess('رویداد با موفقیت ثبت شد.')
+  }
+
+  return (
+    <section className="catalog-manager event-manager">
+      <div className="catalog-manager-heading">
+        <span className="metric-icon purple"><Icon name="calendar" size={19} /></span>
+        <div><h2>مدیریت رویدادها</h2><p>رویداد بسازید، تاریخ شمسی تعیین کنید و در صورت نیاز دسته‌بندی و خدمت مرتبط را انتخاب کنید.</p></div>
+      </div>
+      <form className="catalog-form event-form" onSubmit={handleSubmit}>
+        <h3>رویداد جدید</h3>
+        <label className="settings-field">
+          <span>عنوان رویداد</span>
+          <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="مثلاً جشنواره خدمات پاییزی" required />
+        </label>
+        <div className="event-date-fields">
+          <label className="settings-field">
+            <span>تاریخ شروع (شمسی)</span>
+            <DatePicker
+              containerClassName="event-date-picker"
+              calendar={persian}
+              locale={persianFa}
+              format="YYYY/MM/DD"
+              calendarPosition="bottom-right"
+              onOpenPickNewDate={false}
+              value={startDate ? dateFromIso(startDate) : ''}
+              maxDate={endDate ? dateFromIso(endDate) : undefined}
+              onChange={(date) => {
+                const nextDate = date ? dateToIso(date.toDate()) : ''
+                setStartDate(nextDate)
+                if (nextDate && endDate && nextDate > endDate) setEndDate('')
+              }}
+              render={(_, openCalendar) => (
+                <input
+                  type="text"
+                  className="event-date-input"
+                  aria-label="تاریخ شروع (شمسی)"
+                  value={startDate ? formatPersianDateInput(startDate) : ''}
+                  placeholder="انتخاب تاریخ شمسی"
+                  onClick={openCalendar}
+                  onFocus={openCalendar}
+                  readOnly
+                />
+              )}
+            />
+          </label>
+          <label className="settings-field">
+            <span>تاریخ پایان (شمسی)</span>
+            <DatePicker
+              containerClassName="event-date-picker"
+              calendar={persian}
+              locale={persianFa}
+              format="YYYY/MM/DD"
+              calendarPosition="bottom-right"
+              onOpenPickNewDate={false}
+              value={endDate ? dateFromIso(endDate) : ''}
+              minDate={startDate ? dateFromIso(startDate) : undefined}
+              onChange={(date) => setEndDate(date ? dateToIso(date.toDate()) : '')}
+              render={(_, openCalendar) => (
+                <input
+                  type="text"
+                  className="event-date-input"
+                  aria-label="تاریخ پایان (شمسی)"
+                  value={endDate ? formatPersianDateInput(endDate) : ''}
+                  placeholder="انتخاب تاریخ شمسی"
+                  onClick={openCalendar}
+                  onFocus={openCalendar}
+                  readOnly
+                />
+              )}
+            />
+          </label>
+        </div>
+        <label className="settings-field">
+          <span>دسته‌بندی مرتبط (اختیاری)</span>
+          <select value={categoryId} onChange={(event) => { setCategoryId(event.target.value); setServiceId('') }}>
+            <option value="">بدون دسته‌بندی مرتبط</option>
+            {catalog.categories.map((category) => <option value={category.id} key={category.id}>{category.name}</option>)}
+          </select>
+        </label>
+        <label className="settings-field">
+          <span>خدمت مرتبط (اختیاری)</span>
+          <select value={serviceId} onChange={(event) => setServiceId(event.target.value)}>
+            <option value="">بدون خدمت مرتبط</option>
+            {availableServices.map((service) => <option value={service.id} key={service.id}>{service.name}</option>)}
+          </select>
+        </label>
+        {error && <p className="catalog-feedback error" role="alert">{error}</p>}
+        {success && <p className="catalog-feedback success" role="status">{success}</p>}
+        <button className="primary-button catalog-submit" type="submit"><Icon name="plus" size={16} /> ثبت رویداد</button>
+      </form>
+      <div className="event-admin-list">
+        <h3>رویدادهای ثبت‌شده <span className="category-service-count">{new Intl.NumberFormat('fa-IR').format(events.length)}</span></h3>
+        {events.length === 0 ? (
+          <p className="managed-empty">هنوز رویدادی ثبت نکرده‌اید.</p>
+        ) : [...events].sort((first, second) => first.startDate.localeCompare(second.startDate)).map((item) => {
+          const linkedService = catalog.services.find((service) => service.id === item.serviceId)
+          const linkedCategory = catalog.categories.find((category) => category.id === item.categoryId)
+            ?? catalog.categories.find((category) => category.id === linkedService?.categoryId)
+          return (
+            <article className="panel event-admin-row" key={item.id}>
+              <div>
+                <h4>{item.title}</h4>
+                <p>{formatPersianDate(item.startDate)} تا {formatPersianDate(item.endDate)}</p>
+                <small>{linkedCategory ? `دسته‌بندی مرتبط: ${linkedCategory.name}` : 'بدون دسته‌بندی مرتبط'}</small>
+                <small>{linkedService ? `خدمت مرتبط: ${linkedService.name}` : 'بدون خدمت مرتبط'}</small>
+              </div>
+              <button type="button" className="event-delete-button" aria-label={`حذف رویداد ${item.title}`} onClick={() => deleteEvent(item.id)}><Icon name="trash" size={17} /></button>
+            </article>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
 function AdminSettingsPage({
   section,
   setSection,
@@ -1472,12 +2128,15 @@ function AdminSettingsPage({
   setSiteStyle,
   role,
   catalog,
+  events,
   addCategory,
   addService,
   updateCategory,
   deleteCategory,
   updateService,
   deleteService,
+  addEvent,
+  deleteEvent,
 }: {
   section: AdminSettingsSection
   setSection: (section: AdminSettingsSection) => void
@@ -1485,16 +2144,20 @@ function AdminSettingsPage({
   setSiteStyle: (siteStyle: SiteStyle) => void
   role: Role
   catalog: ServiceCatalogData
+  events: AppEvent[]
   addCategory: (category: CatalogCategory) => void
   addService: (service: CatalogService) => void
   updateCategory: (category: CatalogCategory) => void
   deleteCategory: (categoryId: string) => void
   updateService: (service: CatalogService) => void
   deleteService: (serviceId: string) => void
+  addEvent: (event: AppEvent) => void
+  deleteEvent: (eventId: string) => void
 }) {
   const sections: { id: AdminSettingsSection; label: string; icon: IconName }[] = [
     { id: 'profile', label: 'مشخصات من', icon: 'user' },
     { id: 'catalog', label: 'دسته‌بندی و خدمات', icon: 'grid' },
+    { id: 'events', label: 'رویدادها', icon: 'calendar' },
     { id: 'appearance', label: 'تنظیمات ظاهری', icon: 'settings' },
   ]
 
@@ -1513,6 +2176,8 @@ function AdminSettingsPage({
           <ProfileSettings role={role} />
         ) : section === 'catalog' ? (
           <CatalogManager catalog={catalog} addCategory={addCategory} addService={addService} updateCategory={updateCategory} deleteCategory={deleteCategory} updateService={updateService} deleteService={deleteService} />
+        ) : section === 'events' ? (
+          <EventManager events={events} catalog={catalog} addEvent={addEvent} deleteEvent={deleteEvent} />
         ) : (
           <AppearanceSettings siteStyle={siteStyle} setSiteStyle={setSiteStyle} />
         )}
