@@ -4,6 +4,20 @@ import './App.css'
 type Role = 'user' | 'operator' | 'admin'
 type ServiceView = 'categories' | 'all'
 type Theme = 'light' | 'dark'
+const siteStyleOptions = [
+  { id: 'simple', label: 'ساده', description: 'سطح‌های تمیز با مرزبندی ظریف و بدون سایهٔ نئومورفیک.' },
+  { id: 'glass', label: 'شیشه‌ای ساده', description: 'سطح‌های شفاف با تاری پس‌زمینه و ظاهر شیشه‌ای.' },
+  { id: 'raised', label: 'برجسته', description: 'سطح‌ها با سایه از پس‌زمینه بیرون می‌آیند.' },
+  { id: 'inset', label: 'فرورفته', description: 'سایه‌ها به داخل سطح‌ها هدایت می‌شوند.' },
+  { id: 'flat', label: 'تخت', description: 'سطح‌های ساده با کمترین عمق و سایه.' },
+  { id: 'concave', label: 'مقعر', description: 'گرادیان و سایهٔ داخلی حس فرورفتگی می‌سازد.' },
+  { id: 'convex', label: 'محدب', description: 'گرادیان و سایهٔ بیرونی حس برآمدگی می‌سازد.' },
+  { id: 'colored', label: 'رنگی', description: 'سایه‌ها و سطح‌ها با رنگ تأکیدی هماهنگ‌اند.' },
+] as const
+type SiteStyle = typeof siteStyleOptions[number]['id']
+type AdminSettingsSection = 'profile' | 'catalog' | 'appearance'
+type AppearanceTab = 'site' | 'header'
+type AppearanceStyleGroup = 'simple' | 'neumorphic'
 type CatalogCategory = { id: string; name: string; description: string }
 type CatalogService = { id: string; categoryId: string; name: string; description: string; price: number }
 type ServiceCatalogData = { categories: CatalogCategory[]; services: CatalogService[] }
@@ -12,6 +26,7 @@ type CartItem = { serviceId: string; categoryName: string; name: string; descrip
 const catalogStorageKey = 'xcafinet-service-catalog'
 const cartStorageKey = 'xcafinet-cart'
 const themeStorageKey = 'xcafinet-theme'
+const siteStyleStorageKey = 'xcafinet-site-style'
 const defaultCatalog: ServiceCatalogData = {
   categories: [
     { id: 'design', name: 'طراحی و برندینگ', description: 'از ایده تا هویت بصری ماندگار' },
@@ -129,6 +144,19 @@ function loadTheme(): Theme {
   }
 }
 
+function loadSiteStyle(): SiteStyle {
+  try {
+    const stored = localStorage.getItem(siteStyleStorageKey)
+    const option = siteStyleOptions.find((item) => item.id === stored)
+    if (option) return option.id
+    if (stored !== null) console.error('Stored site style is invalid; using the raised style.')
+  } catch (error) {
+    console.error('Could not load the saved site style.', error)
+  }
+
+  return 'raised'
+}
+
 type IconName =
   | 'home'
   | 'grid'
@@ -224,6 +252,7 @@ const sidebarItems: Record<Role, { label: string; icon: IconName }[]> = {
     { label: 'داشبورد', icon: 'grid' },
     { label: 'گفتگوها', icon: 'chat' },
     { label: 'سفارشات انجام‌شده', icon: 'check' },
+    { label: 'تنظیمات ظاهری', icon: 'settings' },
   ],
   user: [
     { label: 'داشبورد', icon: 'grid' },
@@ -232,6 +261,7 @@ const sidebarItems: Record<Role, { label: string; icon: IconName }[]> = {
     { label: 'دانلودها', icon: 'download' },
     { label: 'گفتگوها', icon: 'chat' },
     { label: 'حساب من', icon: 'user' },
+    { label: 'تنظیمات ظاهری', icon: 'settings' },
   ],
 }
 
@@ -244,6 +274,7 @@ const orders = [
 function App() {
   const [role, setRole] = useState<Role>('user')
   const [theme, setTheme] = useState<Theme>(loadTheme)
+  const [siteStyle, setSiteStyle] = useState<SiteStyle>(loadSiteStyle)
   const [activeNav, setActiveNav] = useState('خانه')
   const [serviceView, setServiceView] = useState<ServiceView>('all')
   const [catalog, setCatalog] = useState(loadServiceCatalog)
@@ -281,6 +312,14 @@ function App() {
       console.error('Could not save the theme preference.', error)
     }
   }, [theme])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(siteStyleStorageKey, siteStyle)
+    } catch (error) {
+      console.error('Could not save the site style.', error)
+    }
+  }, [siteStyle])
 
   useEffect(() => {
     if (!supportMenuOpen) return
@@ -398,16 +437,14 @@ function App() {
   const cartCount = cart.reduce((total, item) => total + item.quantity, 0)
 
   return (
-    <div className={`app-shell ${isServices ? 'service-mode' : ''}`} data-theme={theme} dir="rtl">
-      <header className={`topbar ${isServices ? 'topbar-service-mode' : ''}`}>
+    <div className={`app-shell ${isServices ? 'service-mode' : ''}`} data-theme={theme} data-site-style={siteStyle} dir="rtl">
+      <header className="topbar">
         <div className="topbar-inner">
-          {!isServices && <>
-            <a className="brand" href="#" onClick={(event) => { event.preventDefault(); setActiveNav('خانه') }} aria-label="ایکس کافه، خانه">
-              <span className="brand-mark"><span /></span>
-              <span className="brand-name">ایکس‌کافه<span>.</span></span>
-            </a>
-            <button className="mobile-menu-button" onClick={() => setMobileMenuOpen(!mobileMenuOpen)} aria-label="باز کردن منو"><Icon name="grid" /></button>
-          </>}
+          <a className="brand" href="#" onClick={(event) => { event.preventDefault(); setActiveNav('خانه') }} aria-label="ایکس کافه، خانه">
+            <span className="brand-mark"><span /></span>
+            <span className="brand-name">ایکس‌کافه<span>.</span></span>
+          </a>
+          <button className="mobile-menu-button" onClick={() => setMobileMenuOpen(!mobileMenuOpen)} aria-label="باز کردن منو"><Icon name="grid" /></button>
           <nav className={`main-nav ${mobileMenuOpen ? 'is-open' : ''}`} aria-label="ناوبری اصلی">
             {navItems.map((item) => (
               <button
@@ -422,7 +459,7 @@ function App() {
               </button>
             ))}
           </nav>
-          {!isServices && <div className="topbar-actions">
+          <div className="topbar-actions">
               <label className="search-box">
                 <Icon name="search" size={18} />
                 <input aria-label="جستجو" placeholder="جستجو در ایکس‌کافه..." value={search} onChange={(event) => setSearch(event.target.value)} />
@@ -440,7 +477,7 @@ function App() {
                 <span className="profile-copy"><strong>نگار محمدی</strong><small>{roleLabels[role]}</small></span>
                 <span className="chevron">⌄</span>
               </button>
-            </div>}
+          </div>
         </div>
       </header>
       <header className="compact-header">
@@ -464,7 +501,6 @@ function App() {
 
       {isServices ? (
         <>
-          <div className="service-theme-toggle"><ThemeToggle theme={theme} onToggle={toggleTheme} /></div>
           <main className="service-main">
             <ServiceCatalog catalog={catalog} view={serviceView} setView={setServiceView} search={serviceSearch} setSearch={setServiceSearch} onAddToCart={addToCart} notice={cartNotice} />
           </main>
@@ -519,7 +555,7 @@ function App() {
             ) : activePage === 'داشبورد' ? (
               <Dashboard role={role} range={range} setRange={setRange} search={search} setActivePage={setActivePage} setActiveNav={setActiveNav} />
             ) : (
-              <PanelPage page={activePage} role={role} search={search} catalog={catalog} addCategory={addCategory} addService={addService} updateCategory={updateCategory} deleteCategory={deleteCategory} updateService={updateService} deleteService={deleteService} />
+              <PanelPage page={activePage} role={role} search={search} catalog={catalog} siteStyle={siteStyle} setSiteStyle={setSiteStyle} addCategory={addCategory} addService={addService} updateCategory={updateCategory} deleteCategory={deleteCategory} updateService={updateService} deleteService={deleteService} />
             )}
           </section>
         </div>
@@ -1308,6 +1344,8 @@ function PanelPage({
   role,
   search,
   catalog,
+  siteStyle,
+  setSiteStyle,
   addCategory,
   addService,
   updateCategory,
@@ -1319,6 +1357,8 @@ function PanelPage({
   role: Role
   search: string
   catalog: ServiceCatalogData
+  siteStyle: SiteStyle
+  setSiteStyle: (siteStyle: SiteStyle) => void
   addCategory: (category: CatalogCategory) => void
   addService: (service: CatalogService) => void
   updateCategory: (category: CatalogCategory) => void
@@ -1326,6 +1366,7 @@ function PanelPage({
   updateService: (service: CatalogService) => void
   deleteService: (serviceId: string) => void
 }) {
+  const [adminSettingsSection, setAdminSettingsSection] = useState<AdminSettingsSection>('profile')
   const pageDescriptions: Record<string, string> = {
     'کیف پول': 'موجودی و تراکنش‌های حساب خود را مدیریت کنید.',
     'کاربران': 'فهرست اعضا و وضعیت حساب‌های ایکس‌کافه.',
@@ -1336,6 +1377,7 @@ function PanelPage({
     'سفارشات': 'وضعیت و جزئیات سفارش‌های خود را پیگیری کنید.',
     'دانلودها': 'فایل‌های آمادهٔ سفارش‌های شما در این بخش قرار می‌گیرند.',
     'حساب من': 'اطلاعات شخصی و تنظیمات حساب کاربری.',
+    'تنظیمات ظاهری': 'ظاهر سایت را مطابق سلیقهٔ خود انتخاب کنید.',
   }
   const list = page.includes('سفارش') ? orders : page === 'گفتگوها' ? [
     { id: 'CH-108', service: 'مشاوره دربارهٔ سفارش طراحی', date: 'امروز، ۱۱:۰۸', amount: 'پاسخ جدید', status: 'آنلاین', tone: 'purple', initials: 'م' },
@@ -1345,22 +1387,28 @@ function PanelPage({
   const matching = list.filter((item) => `${item.id} ${item.service} ${item.status}`.includes(search.trim()))
   return (
     <>
-      <div className="welcome-row section-welcome"><div><div className="eyebrow"><span className="eyebrow-dot" /> پنل {roleLabels[role]}</div><h1>{page}</h1><p>{pageDescriptions[page] ?? 'خلاصهٔ فعالیت‌ها و اطلاعات حساب شما.'}</p></div>{page !== 'دانلودها' && <button className="primary-button"><Icon name={page === 'گفتگوها' ? 'chat' : 'plus'} size={17} />{page === 'گفتگوها' ? 'گفتگوی تازه' : 'افزودن مورد جدید'}</button>}</div>
-      {page === 'تنظیمات' || page === 'حساب من' ? (
+      <div className="welcome-row section-welcome"><div><div className="eyebrow"><span className="eyebrow-dot" /> پنل {roleLabels[role]}</div><h1>{page}</h1><p>{pageDescriptions[page] ?? 'خلاصهٔ فعالیت‌ها و اطلاعات حساب شما.'}</p></div>{page !== 'دانلودها' && page !== 'تنظیمات' && page !== 'تنظیمات ظاهری' && <button className="primary-button"><Icon name={page === 'گفتگوها' ? 'chat' : 'plus'} size={17} />{page === 'گفتگوها' ? 'گفتگوی تازه' : 'افزودن مورد جدید'}</button>}</div>
+      {page === 'تنظیمات' && role === 'admin' ? (
+        <AdminSettingsPage
+          section={adminSettingsSection}
+          setSection={setAdminSettingsSection}
+          siteStyle={siteStyle}
+          setSiteStyle={setSiteStyle}
+          role={role}
+          catalog={catalog}
+          addCategory={addCategory}
+          addService={addService}
+          updateCategory={updateCategory}
+          deleteCategory={deleteCategory}
+          updateService={updateService}
+          deleteService={deleteService}
+        />
+      ) : page === 'تنظیمات' || page === 'حساب من' ? (
         <div className="settings-stack">
-          <div className="panel settings-panel">
-            <div className="settings-avatar">
-              <span className="avatar avatar-user">ن</span>
-              <div><strong>{role === 'admin' ? 'آرمان رضایی' : role === 'operator' ? 'سارا احمدی' : 'نگار محمدی'}</strong><small>عضو از آبان ۱۴۰۳</small></div>
-              <button className="text-button">ویرایش تصویر</button>
-            </div>
-            {[['نام و نام خانوادگی', 'نگار محمدی'], ['ایمیل', 'negar@email.com'], ['شماره همراه', '۰۹۱۲ ۳۴۵ ۶۷۸۹']].map(([label, value]) => (
-              <label className="settings-field" key={label}><span>{label}</span><input defaultValue={value} /></label>
-            ))}
-            <button className="primary-button settings-save">ذخیره تغییرات</button>
-          </div>
-          {page === 'تنظیمات' && role === 'admin' && <CatalogManager catalog={catalog} addCategory={addCategory} addService={addService} updateCategory={updateCategory} deleteCategory={deleteCategory} updateService={updateService} deleteService={deleteService} />}
+          <ProfileSettings role={role} />
         </div>
+      ) : page === 'تنظیمات ظاهری' ? (
+        <AppearanceSettings siteStyle={siteStyle} setSiteStyle={setSiteStyle} />
       ) : page === 'کیف پول' ? (
         <SectionPage section="کیف پول" role={role} />
       ) : page === 'دانلودها' ? (
@@ -1393,6 +1441,119 @@ function PanelPage({
               ))}</tbody>
             </table>
           </div>
+        </section>
+      )}
+    </>
+  )
+}
+
+function ProfileSettings({ role }: { role: Role }) {
+  const displayName = role === 'admin' ? 'آرمان رضایی' : role === 'operator' ? 'سارا احمدی' : 'نگار محمدی'
+
+  return (
+    <div className="panel settings-panel">
+      <div className="settings-avatar">
+        <span className="avatar avatar-user">ن</span>
+        <div><strong>{displayName}</strong><small>عضو از آبان ۱۴۰۳</small></div>
+        <button className="text-button">ویرایش تصویر</button>
+      </div>
+      {[['نام و نام خانوادگی', 'نگار محمدی'], ['ایمیل', 'negar@email.com'], ['شماره همراه', '۰۹۱۲ ۳۴۵ ۶۷۸۹']].map(([label, value]) => (
+        <label className="settings-field" key={label}><span>{label}</span><input defaultValue={value} /></label>
+      ))}
+      <button className="primary-button settings-save">ذخیره تغییرات</button>
+    </div>
+  )
+}
+
+function AdminSettingsPage({
+  section,
+  setSection,
+  siteStyle,
+  setSiteStyle,
+  role,
+  catalog,
+  addCategory,
+  addService,
+  updateCategory,
+  deleteCategory,
+  updateService,
+  deleteService,
+}: {
+  section: AdminSettingsSection
+  setSection: (section: AdminSettingsSection) => void
+  siteStyle: SiteStyle
+  setSiteStyle: (siteStyle: SiteStyle) => void
+  role: Role
+  catalog: ServiceCatalogData
+  addCategory: (category: CatalogCategory) => void
+  addService: (service: CatalogService) => void
+  updateCategory: (category: CatalogCategory) => void
+  deleteCategory: (categoryId: string) => void
+  updateService: (service: CatalogService) => void
+  deleteService: (serviceId: string) => void
+}) {
+  const sections: { id: AdminSettingsSection; label: string; icon: IconName }[] = [
+    { id: 'profile', label: 'مشخصات من', icon: 'user' },
+    { id: 'catalog', label: 'دسته‌بندی و خدمات', icon: 'grid' },
+    { id: 'appearance', label: 'تنظیمات ظاهری', icon: 'settings' },
+  ]
+
+  return (
+    <div className="admin-settings-layout">
+      <nav className="admin-settings-sidebar" aria-label="بخش‌های تنظیمات مدیریت">
+        {sections.map((item) => (
+          <button key={item.id} type="button" className={`admin-settings-link ${section === item.id ? 'active' : ''}`} aria-current={section === item.id ? 'page' : undefined} onClick={() => setSection(item.id)}>
+            <Icon name={item.icon} size={17} />
+            <span>{item.label}</span>
+          </button>
+        ))}
+      </nav>
+      <div className="admin-settings-content">
+        {section === 'profile' ? (
+          <ProfileSettings role={role} />
+        ) : section === 'catalog' ? (
+          <CatalogManager catalog={catalog} addCategory={addCategory} addService={addService} updateCategory={updateCategory} deleteCategory={deleteCategory} updateService={updateService} deleteService={deleteService} />
+        ) : (
+          <AppearanceSettings siteStyle={siteStyle} setSiteStyle={setSiteStyle} />
+        )}
+      </div>
+    </div>
+  )
+}
+
+function AppearanceSettings({ siteStyle, setSiteStyle }: { siteStyle: SiteStyle; setSiteStyle: (siteStyle: SiteStyle) => void }) {
+  const [activeTab, setActiveTab] = useState<AppearanceTab>('site')
+  const [activeStyleGroup, setActiveStyleGroup] = useState<AppearanceStyleGroup>(() => siteStyle === 'simple' || siteStyle === 'glass' ? 'simple' : 'neumorphic')
+  const activeStyle = siteStyleOptions.find((option) => option.id === siteStyle)
+  const visibleStyleOptions = siteStyleOptions.filter((option) => activeStyleGroup === 'simple'
+    ? option.id === 'simple' || option.id === 'glass'
+    : option.id !== 'simple' && option.id !== 'glass')
+
+  return (
+    <>
+      <div className="appearance-tabs" role="tablist" aria-label="تنظیمات ظاهری">
+        <button type="button" role="tab" aria-selected={activeTab === 'site'} className={activeTab === 'site' ? 'active' : ''} onClick={() => setActiveTab('site')}>حالت سایت</button>
+        <button type="button" role="tab" aria-selected={activeTab === 'header'} className={activeTab === 'header' ? 'active' : ''} onClick={() => setActiveTab('header')}>هدر و تولبار</button>
+      </div>
+      {activeTab === 'site' && (
+        <section className="panel appearance-panel" role="tabpanel">
+          <div className="panel-heading">
+            <div><h2>سبک ظاهری سایت</h2><p>هر سبک را انتخاب کنید تا ظاهر کل سایت همان لحظه تغییر کند.</p></div>
+          </div>
+          <div className="site-style-groups" role="group" aria-label="گروه‌های سبک سایت">
+            <button type="button" className="site-style-group-button" aria-pressed={activeStyleGroup === 'simple'} onClick={() => setActiveStyleGroup('simple')}>حالت ساده</button>
+            <button type="button" className="site-style-group-button" aria-pressed={activeStyleGroup === 'neumorphic'} onClick={() => setActiveStyleGroup('neumorphic')}>حالت نئومورفیسم</button>
+          </div>
+          <div className="site-style-options" role="group" aria-label={activeStyleGroup === 'simple' ? 'سبک‌های ساده' : 'مدل‌های نئومورفیک'}>
+            {visibleStyleOptions.map((option) => (
+              <button key={option.id} type="button" className={`appearance-style-option ${siteStyle === option.id ? 'selected' : ''}`} aria-pressed={siteStyle === option.id} onClick={() => setSiteStyle(option.id)}>
+                <span className={`site-style-preview preview-${option.id}`} aria-hidden="true"><i /><b /></span>
+                <strong>{option.label}</strong>
+                <small>{option.description}</small>
+              </button>
+            ))}
+          </div>
+          <p className="appearance-current" role="status">سبک فعال: <strong>{activeStyle?.label}</strong></p>
         </section>
       )}
     </>
