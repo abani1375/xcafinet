@@ -2361,6 +2361,8 @@ function DemoChatDialog({
   const [paymentNotice, setPaymentNotice] = useState('')
   const [servicePickerOpen, setServicePickerOpen] = useState(false)
   const [cancellationWarningOpen, setCancellationWarningOpen] = useState(false)
+  const [mobileOrderDetailsOpen, setMobileOrderDetailsOpen] = useState(false)
+  const [mobileOperatorToolsOpen, setMobileOperatorToolsOpen] = useState(false)
   const [cancellationNotice, setCancellationNotice] = useState('')
   const [cancellationError, setCancellationError] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -2374,12 +2376,13 @@ function DemoChatDialog({
       if (event.key === 'Escape') {
         if (cancellationWarningOpen) setCancellationWarningOpen(false)
         else if (servicePickerOpen) setServicePickerOpen(false)
+        else if (mobileOperatorToolsOpen) setMobileOperatorToolsOpen(false)
         else onClose()
       }
     }
     window.addEventListener('keydown', closeOnEscape)
     return () => window.removeEventListener('keydown', closeOnEscape)
-  }, [cancellationWarningOpen, onClose, servicePickerOpen])
+  }, [cancellationWarningOpen, mobileOperatorToolsOpen, onClose, servicePickerOpen])
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -2510,12 +2513,11 @@ function DemoChatDialog({
     <div className="demo-chat-backdrop" onMouseDown={(event) => {
       if (event.target === event.currentTarget) onClose()
     }}>
-      <section className={`demo-chat-dialog ${isOperatorView ? 'operator-chat-layout' : ''}`} role="dialog" aria-modal="true" aria-labelledby="demo-chat-title" onMouseDown={(event) => event.stopPropagation()}>
+      <section className={`demo-chat-dialog ${isOperatorView ? 'operator-chat-layout' : 'user-chat-layout'}`} role="dialog" aria-modal="true" aria-labelledby="demo-chat-title" onMouseDown={(event) => event.stopPropagation()}>
         <aside className="demo-chat-sidebar">
           {isOperatorView && <header className="demo-sidebar-header">امکانات و جزئیات</header>}
           {isOperatorView && (
             <>
-              <input ref={operatorDocumentInputRef} className="demo-chat-file-input" type="file" aria-label="انتخاب مدرک برای مشتری" onChange={handleOperatorDocumentChange} />
               <div className="demo-sidebar-actions">
                 <button type="button" onClick={() => operatorDocumentInputRef.current?.click()}><Icon name="paperclip" size={16} /> ارسال مدارک برای مشتری</button>
                 <button type="button" onClick={() => { setOperatorActionError(''); setOperatorActionNotice(''); setServicePickerOpen(true) }}><Icon name="plus" size={16} /> خدمات اضافه</button>
@@ -2584,6 +2586,53 @@ function DemoChatDialog({
             </div>
             <button type="button" className="demo-chat-close" aria-label="بستن گفتگو" onClick={onClose}><Icon name="close" size={19} /></button>
           </header>
+          {isOperatorView && order.conversationStatus !== 'closed' && (
+            <button type="button" className="demo-chat-mobile-complete" onClick={handleCloseDemoConversation}>اتمام خدمت و بستن</button>
+          )}
+          {!isOperatorView && (
+            <div className="demo-chat-mobile-actions">
+              <button
+                type="button"
+                aria-expanded={mobileOrderDetailsOpen}
+                aria-controls="demo-mobile-order-details"
+                onClick={() => setMobileOrderDetailsOpen((open) => !open)}
+              >
+                {mobileOrderDetailsOpen ? 'بستن جزئیات' : 'جزئیات سفارش'}
+              </button>
+              {order.status === 'در حال انجام' && (
+                <button type="button" className="cancel" onClick={() => {
+                  setMobileOrderDetailsOpen(false)
+                  setCancellationError('')
+                  setCancellationWarningOpen(true)
+                }}>انصراف از خدمت</button>
+              )}
+            </div>
+          )}
+          {!isOperatorView && mobileOrderDetailsOpen && (
+            <section className="demo-chat-mobile-details" id="demo-mobile-order-details" aria-label="جزئیات سفارش">
+              <ul className="demo-sidebar-services">
+                {order.items.map((item) => (
+                  <li key={item.serviceId}>
+                    <span>{item.name}</span>
+                    <small>تعداد: {new Intl.NumberFormat('fa-IR').format(item.quantity)}</small>
+                  </li>
+                ))}
+              </ul>
+              <dl className="demo-sidebar-details">
+                <div><dt>کد سفارش</dt><dd>{order.id}</dd></div>
+                <div><dt>وضعیت</dt><dd>{order.status}</dd></div>
+                <div><dt>وضعیت گفتگو</dt><dd>{order.conversationStatus === 'closed' ? 'بسته شده' : 'باز'}</dd></div>
+                <div><dt>مبلغ</dt><dd>{formatPrice(order.totalPrice)} ریال</dd></div>
+                <div><dt>پرداخت</dt><dd>آزمایشی</dd></div>
+                {order.status === 'لغو شده' && (
+                  <>
+                    <div><dt>خسارت کسرشده</dt><dd>{formatPrice(order.cancellationFee ?? 0)} ریال</dd></div>
+                    <div><dt>بازگشت به کیف پول</dt><dd>{formatPrice(order.refundAmount ?? 0)} ریال</dd></div>
+                  </>
+                )}
+              </dl>
+            </section>
+          )}
           <div className="demo-chat-message-area" aria-live="polite">
             <div className="demo-chat-day-separator"><span>گفتگوی سفارش</span></div>
             {order.messages.length === 0 ? (
@@ -2644,7 +2693,33 @@ function DemoChatDialog({
           )}
           <form className="demo-chat-composer" onSubmit={handleSubmit}>
             <input ref={fileInputRef} className="demo-chat-file-input" type="file" aria-label="انتخاب مدرک" onChange={handleFileChange} />
-            <button type="button" className="demo-chat-attach" aria-label="پیوست مدرک" title="پیوست مدرک" onClick={() => fileInputRef.current?.click()}><Icon name="paperclip" size={20} /></button>
+            {isOperatorView && <input ref={operatorDocumentInputRef} className="demo-chat-file-input" type="file" aria-label="انتخاب مدرک برای مشتری" onChange={handleOperatorDocumentChange} />}
+            {isOperatorView ? (
+              <div className={`demo-chat-mobile-tools ${mobileOperatorToolsOpen ? 'open' : ''}`}>
+                <div className="demo-chat-mobile-tool-options" aria-hidden={!mobileOperatorToolsOpen}>
+                  <button type="button" tabIndex={mobileOperatorToolsOpen ? 0 : -1} onClick={() => {
+                    setMobileOperatorToolsOpen(false)
+                    operatorDocumentInputRef.current?.click()
+                  }}><Icon name="paperclip" size={16} /> ارسال مدارک</button>
+                  <button type="button" tabIndex={mobileOperatorToolsOpen ? 0 : -1} onClick={() => {
+                    setMobileOperatorToolsOpen(false)
+                    setOperatorActionError('')
+                    setOperatorActionNotice('')
+                    setServicePickerOpen(true)
+                  }}><Icon name="plus" size={16} /> افزودن خدمات</button>
+                </div>
+                <button
+                  type="button"
+                  className="demo-chat-mobile-tools-toggle"
+                  aria-label={mobileOperatorToolsOpen ? 'بستن ابزارهای گفتگو' : 'باز کردن ابزارهای گفتگو'}
+                  aria-expanded={mobileOperatorToolsOpen}
+                  onClick={() => setMobileOperatorToolsOpen((open) => !open)}
+                ><Icon name={mobileOperatorToolsOpen ? 'close' : 'plus'} size={19} /></button>
+                <button type="button" className="demo-chat-attach" aria-label="پیوست مدرک" title="پیوست مدرک" onClick={() => fileInputRef.current?.click()}><Icon name="paperclip" size={20} /></button>
+              </div>
+            ) : (
+              <button type="button" className="demo-chat-attach" aria-label="پیوست مدرک" title="پیوست مدرک" onClick={() => fileInputRef.current?.click()}><Icon name="paperclip" size={20} /></button>
+            )}
             <input aria-label="پیام شما" value={draft} onChange={(event) => setDraft(event.currentTarget.value)} placeholder="پیام بنویس..." />
             <button className="demo-chat-send" type="submit" disabled={!draft.trim()} aria-label="ارسال پیام"><Icon name="arrow" size={17} /></button>
           </form>
