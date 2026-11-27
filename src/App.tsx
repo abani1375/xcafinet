@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState, type ChangeEvent, type FormEvent, type ForwardRefExoticComponent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type FormEvent, type ForwardRefExoticComponent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import DatePickerModule, { type CalendarProps, type DatePickerProps } from 'react-multi-date-picker'
 import persian from 'react-date-object/calendars/persian'
 import persianFa from 'react-date-object/locales/persian_fa'
 import './App.css'
+import OtpVerification from './OtpVerification'
 
 // Vite wraps this CommonJS package's exports, so render its nested React component.
 type PersianDatePickerProps = Omit<CalendarProps, 'onChange'> & DatePickerProps
@@ -12,13 +13,11 @@ type Role = 'user' | 'operator' | 'admin'
 type ServiceView = 'categories' | 'all'
 type Theme = 'light' | 'dark'
 const siteStyleOptions = [
-  { id: 'simple', label: 'ساده', description: 'سطح‌های تمیز با مرزبندی ظریف و بدون سایهٔ نئومورفیک.' },
+  { id: 'simple', label: 'ساده', description: 'ظاهر معمول سایت با رنگ‌های ساده، مرزبندی ظریف و بدون سایه‌های نئومورفیک.' },
   { id: 'glass', label: 'شیشه‌ای ساده', description: 'سطح‌های شفاف با تاری پس‌زمینه و ظاهر شیشه‌ای.' },
+  { id: 'liquid', label: 'شیشه‌ای مایع', description: 'سطح‌های شفاف و نورانی با بازتاب‌های رنگی و عمق شیشه‌ای.' },
   { id: 'raised', label: 'برجسته', description: 'سطح‌ها با سایه از پس‌زمینه بیرون می‌آیند.' },
   { id: 'inset', label: 'فرورفته', description: 'سایه‌ها به داخل سطح‌ها هدایت می‌شوند.' },
-  { id: 'flat', label: 'تخت', description: 'سطح‌های ساده با کمترین عمق و سایه.' },
-  { id: 'concave', label: 'مقعر', description: 'گرادیان و سایهٔ داخلی حس فرورفتگی می‌سازد.' },
-  { id: 'convex', label: 'محدب', description: 'گرادیان و سایهٔ بیرونی حس برآمدگی می‌سازد.' },
   { id: 'colored', label: 'رنگی', description: 'سایه‌ها و سطح‌ها با رنگ تأکیدی هماهنگ‌اند.' },
 ] as const
 type SiteStyle = typeof siteStyleOptions[number]['id']
@@ -66,11 +65,14 @@ const demoUserId = 'demo-user-negar'
 const demoUserName = 'نگار محمدی'
 const demoUserPhone = '۰۹۱۲ ۳۴۵ ۶۷۸۹'
 const demoWalletInitialBalance = 24_800_000
+const demoAdminWalletBalance = 128_400_000
 const demoOperators = [{ id: 'demo-operator-sara', fullName: 'سارا احمدی', isAvailable: true }]
 const maxDemoDocumentSize = 2 * 1024 * 1024
+const profileImagesStorageKey = 'xcafinet-profile-images'
 const maxBirthDate = new Date()
 const themeStorageKey = 'xcafinet-theme'
 const siteStyleStorageKey = 'xcafinet-site-style'
+const authStateStorageKey = 'xcafinet-auth-state'
 const defaultCatalog: ServiceCatalogData = {
   categories: [
     { id: 'design', name: 'طراحی و برندینگ', description: 'از ایده تا هویت بصری ماندگار' },
@@ -467,6 +469,69 @@ function createCatalogIcon(file: File): Promise<string> {
   })
 }
 
+function createProfileImage(file: File): Promise<string> {
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+    return Promise.reject(new Error('فرمت عکس باید JPEG، PNG یا WebP باشد.'))
+  }
+  if (file.size > 5 * 1024 * 1024) return Promise.reject(new Error('حجم عکس نباید بیشتر از ۵ مگابایت باشد.'))
+
+  const imageUrl = URL.createObjectURL(file)
+
+  return new Promise((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => {
+      try {
+        const maxSize = 256
+        const scale = Math.min(1, maxSize / Math.max(image.naturalWidth, image.naturalHeight))
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.max(1, Math.round(image.naturalWidth * scale))
+        canvas.height = Math.max(1, Math.round(image.naturalHeight * scale))
+        const context = canvas.getContext('2d')
+        if (!context) throw new Error('امکان آماده‌سازی عکس وجود ندارد.')
+        context.drawImage(image, 0, 0, canvas.width, canvas.height)
+        resolve(canvas.toDataURL('image/webp', .82))
+      } catch (error) {
+        reject(error instanceof Error ? error : new Error('آماده‌سازی عکس ناموفق بود.'))
+      } finally {
+        URL.revokeObjectURL(imageUrl)
+      }
+    }
+    image.onerror = () => {
+      URL.revokeObjectURL(imageUrl)
+      reject(new Error('خواندن عکس انتخاب‌شده ممکن نیست.'))
+    }
+    image.src = imageUrl
+  })
+}
+
+function loadProfileImages(): Partial<Record<Role, string>> {
+  try {
+    const stored = localStorage.getItem(profileImagesStorageKey)
+    if (stored === null) return {}
+    const parsed: unknown = JSON.parse(stored)
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      console.error('Stored profile images have an invalid format.')
+      return {}
+    }
+
+    const storedImages = parsed as Record<string, unknown>
+    const images: Partial<Record<Role, string>> = {}
+    for (const role of ['user', 'operator', 'admin'] as const) {
+      const image = storedImages[role]
+      if (image === undefined) continue
+      if (typeof image !== 'string' || image.length > 500_000 || !/^data:image\/webp;base64,[A-Za-z0-9+/]+={0,2}$/.test(image)) {
+        console.error(`Stored ${role} profile image has an invalid format.`)
+        return {}
+      }
+      images[role] = image
+    }
+    return images
+  } catch (error) {
+    console.error('Could not load saved profile images.', error)
+    return {}
+  }
+}
+
 function loadTheme(): Theme {
   try {
     return localStorage.getItem(themeStorageKey) === 'dark' ? 'dark' : 'light'
@@ -481,12 +546,13 @@ function loadSiteStyle(): SiteStyle {
     const stored = localStorage.getItem(siteStyleStorageKey)
     const option = siteStyleOptions.find((item) => item.id === stored)
     if (option) return option.id
-    if (stored !== null) console.error('Stored site style is invalid; using the raised style.')
+    if (stored === 'flat' || stored === 'concave' || stored === 'convex') return 'raised'
+    if (stored !== null) console.error('Stored site style is invalid; using the simple style.')
   } catch (error) {
     console.error('Could not load the saved site style.', error)
   }
 
-  return 'raised'
+  return 'simple'
 }
 
 type IconName =
@@ -518,6 +584,10 @@ type IconName =
   | 'sun'
   | 'paperclip'
   | 'close'
+  | 'chevron'
+  | 'browser'
+  | 'globe'
+  | 'printer'
 
 const iconPaths: Record<IconName, ReactNode> = {
   home: <><path d="m3 10 9-7 9 7" /><path d="M5 9v11h14V9M9 20v-7h6v7" /></>,
@@ -548,6 +618,10 @@ const iconPaths: Record<IconName, ReactNode> = {
   sun: <><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42" /></>,
   paperclip: <><path d="m8 12.5 6.8-6.8a3.2 3.2 0 0 1 4.5 4.5l-8.5 8.5a5 5 0 0 1-7.1-7.1l8.2-8.2" /></>,
   close: <><path d="m18 6-12 12M6 6l12 12" /></>,
+  chevron: <><path d="m15 18-6-6 6-6" /></>,
+  browser: <><rect x="3" y="4" width="18" height="16" rx="3" /><path d="M3 9h18M7 6.5h.01M10 6.5h.01" /></>,
+  globe: <><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18" /></>,
+  printer: <><path d="M7 8V3h10v5M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2M7 14h10v7H7zM17 11h.01" /></>,
 }
 
 function Icon({ name, size = 20, className = '' }: { name: IconName; size?: number; className?: string }) {
@@ -564,6 +638,114 @@ function ThemeToggle({ theme, onToggle }: { theme: Theme; onToggle: () => void }
     <button className="theme-toggle-button" type="button" aria-label={`تغییر به ${nextThemeLabel}`} aria-pressed={theme === 'dark'} title={`تغییر به ${nextThemeLabel}`} onClick={onToggle}>
       <Icon name={theme === 'light' ? 'moon' : 'sun'} size={18} />
     </button>
+  )
+}
+
+function LoginShowcaseDetails({ mobile = false }: { mobile?: boolean }) {
+  return (
+    <>
+      <div className={mobile ? 'login-mobile-showcase-copy' : 'login-showcase-copy'}>
+        <strong>کارهای اینترنتی، راحت‌تر از همیشه</strong>
+        <span>از ثبت‌نام و پیگیری تا خدمات اداری؛ کافی‌نت ایکس همراه شماست.</span>
+      </div>
+      <div className={mobile ? 'login-mobile-showcase-services' : 'login-showcase-services'} role="group" aria-label="خدمات کافی‌نت">
+        <span role="img" aria-label="مرورگر"><Icon name="browser" size={20} /></span>
+        <span role="img" aria-label="اینترنت"><Icon name="globe" size={20} /></span>
+        <span role="img" aria-label="چاپگر"><Icon name="printer" size={20} /></span>
+      </div>
+    </>
+  )
+}
+
+function LoginPage({ theme, onToggleTheme, notice, canReturn, onBack, onLogin }: {
+  theme: Theme
+  onToggleTheme: () => void
+  notice: string
+  canReturn: boolean
+  onBack: () => void
+  onLogin: () => void
+}) {
+  const [step, setStep] = useState<'contact' | 'otp'>('contact')
+  const [contact, setContact] = useState('')
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setStep('otp')
+  }
+
+  if (step === 'otp') return <OtpVerification contact={contact} onContinue={onLogin} />
+
+  return (
+    <main className="login-page">
+      <div className="login-toolbar">
+        <div className="login-toolbar-note"><span /> ورود امن به فضای کاربری</div>
+        <div className="login-toolbar-actions">
+          {canReturn && <button className="login-back-button" type="button" onClick={onBack}>بازگشت به سایت</button>}
+          <ThemeToggle theme={theme} onToggle={onToggleTheme} />
+        </div>
+      </div>
+      <section className="login-card" aria-labelledby="login-title">
+        <aside className="login-showcase" aria-hidden="true">
+          <div className="login-showcase-glow" />
+          <div className="login-showcase-emblem">
+            <div className="login-showcase-logo">
+              <img className="brand-mark" src="/kafinet-x-logo.png" alt="" />
+            </div>
+            <span className="login-showcase-emblem-ring" />
+          </div>
+          <LoginShowcaseDetails />
+          <div className="login-showcase-wave" aria-hidden="true">
+            <svg className="waves" viewBox="0 24 150 28" preserveAspectRatio="none">
+              <defs>
+                <path id="login-showcase-wave-shape" d="M-160 44c30 0 58-18 88-18s58 18 88 18 58-18 88-18 58 18 88 18v44h-352z" />
+              </defs>
+              <g className="parallax">
+                <use href="#login-showcase-wave-shape" x="48" y="0" />
+                <use href="#login-showcase-wave-shape" x="48" y="3" />
+                <use href="#login-showcase-wave-shape" x="48" y="5" />
+                <use href="#login-showcase-wave-shape" x="48" y="7" />
+              </g>
+            </svg>
+          </div>
+        </aside>
+        <div className="login-form-panel">
+          <div className="login-mobile-brand">
+            <img className="brand-mark" src="/kafinet-x-logo.png" alt="" />
+            <strong>کافی‌نت ایکس<span>.</span></strong>
+          </div>
+          <div className="login-form-heading login-form-heading-contact">
+            <span>خوش برگشتی</span>
+            <h2 id="login-title">ورود به حساب</h2>
+            <p>شماره همراه یا ایمیلت را وارد کن.</p>
+          </div>
+          <h2 className="login-mobile-title" aria-hidden="true">ورود به کافی‌نت ایکس</h2>
+          <form className="login-form" onSubmit={handleSubmit}>
+            <label className="login-field">
+              <span>شماره همراه یا ایمیل</span>
+              <input
+                type="text"
+                name="contact"
+                autoComplete="username"
+                placeholder="مثلاً ۰۹۱۲۱۲۳۴۵۶۷ یا name@example.com"
+                value={contact}
+                onChange={(event) => setContact(event.target.value)}
+                required
+              />
+            </label>
+            {notice && <p className="login-notice" role="alert">{notice}</p>}
+            <button className="login-submit-button" type="submit">
+              <span>دریافت کد ورود</span>
+              <Icon name="arrow" size={17} />
+            </button>
+          </form>
+          <div className="login-mobile-showcase-details">
+            <LoginShowcaseDetails mobile />
+          </div>
+          <p className="login-demo-note">ارسال و بررسی واقعی کد پس از اتصال سرویس پیامک و ایمیل فعال می‌شود؛ این صفحه فعلاً نمایشی است.</p>
+          <div className="login-form-footer"><span><Icon name="check" size={14} /> تجربه‌ای ساده و یکپارچه</span><span>کافی‌نت ایکس</span></div>
+        </div>
+      </section>
+    </main>
   )
 }
 
@@ -614,8 +796,17 @@ const orders = [
 
 function App() {
   const [role, setRole] = useState<Role>('user')
+  const [profileImages, setProfileImages] = useState<Partial<Record<Role, string>>>(loadProfileImages)
+  const [loginState, setLoginState] = useState<LoginState>(loadLoginState)
+  const [loginNotice, setLoginNotice] = useState('')
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true)
   const [theme, setTheme] = useState<Theme>(loadTheme)
   const [siteStyle, setSiteStyle] = useState<SiteStyle>(loadSiteStyle)
+  useLayoutEffect(() => {
+    const appShell = document.querySelector<HTMLElement>('.app-shell')
+    if (!appShell) throw new Error('Could not find the app shell to sync the page background.')
+    document.documentElement.style.background = getComputedStyle(appShell).background
+  }, [theme, siteStyle])
   const [activeNav, setActiveNav] = useState('خانه')
   const [serviceView, setServiceView] = useState<ServiceView>('all')
   const [catalog, setCatalog] = useState(loadServiceCatalog)
@@ -635,6 +826,66 @@ function App() {
   const [supportMenuOpen, setSupportMenuOpen] = useState(false)
   const compactSupportMenuRef = useRef<HTMLDivElement>(null)
   const desktopSupportMenuRef = useRef<HTMLDivElement>(null)
+
+  const updateProfileImage = (image: string | null): boolean => {
+    const nextImages = { ...profileImages }
+    if (image) nextImages[role] = image
+    else delete nextImages[role]
+
+    try {
+      localStorage.setItem(profileImagesStorageKey, JSON.stringify(nextImages))
+      setProfileImages(nextImages)
+      return true
+    } catch (error) {
+      console.error('Could not save the profile image.', error)
+      return false
+    }
+  }
+
+  const openLoginPage = () => {
+    setLoginNotice('')
+    setLoginState((current) => ({ ...current, pageOpen: true }))
+  }
+
+  const handleDemoLogin = () => {
+    try {
+      localStorage.setItem(authStateStorageKey, 'signed-in')
+    } catch (error) {
+      console.error('Could not save the login state.', error)
+      setLoginNotice('ورود انجام نشد؛ وضعیت حساب در این مرورگر ذخیره نشد.')
+      return
+    }
+
+    setLoginNotice('')
+    setLoginState({ authenticated: true, pageOpen: false })
+  }
+
+  const handleLogout = () => {
+    let notice = ''
+    try {
+      localStorage.setItem(authStateStorageKey, 'signed-out')
+    } catch (error) {
+      console.error('Could not save the signed-out state.', error)
+      notice = 'خروج انجام شد، اما وضعیت آن در مرورگر ذخیره نشد.'
+    }
+
+    setLoginNotice(notice)
+    setLoginState({ authenticated: false, pageOpen: true })
+  }
+
+  type LoginState = { authenticated: boolean; pageOpen: boolean }
+
+  function loadLoginState(): LoginState {
+    try {
+      const stored = localStorage.getItem(authStateStorageKey)
+      if (stored === 'signed-out') return { authenticated: false, pageOpen: true }
+      if (stored === null || stored === 'signed-in') return { authenticated: true, pageOpen: false }
+      console.error('Stored login state is invalid; opening the app in its default state.')
+    } catch (error) {
+      console.error('Could not load the saved login state.', error)
+    }
+    return { authenticated: true, pageOpen: false }
+  }
 
   useEffect(() => {
     try {
@@ -1034,13 +1285,28 @@ function App() {
     </>
   )
 
+  if (loginState.pageOpen) {
+    return (
+      <div className="app-shell login-shell" data-theme={theme} data-site-style={siteStyle} dir="rtl">
+        <LoginPage
+          theme={theme}
+          onToggleTheme={toggleTheme}
+          notice={loginNotice}
+          canReturn={loginState.authenticated}
+          onBack={() => setLoginState((current) => ({ ...current, pageOpen: false }))}
+          onLogin={handleDemoLogin}
+        />
+      </div>
+    )
+  }
+
   return (
     <div className={`app-shell ${isServices ? 'service-mode' : ''} ${isCart ? 'cart-mode' : ''} ${isEmptyCart ? 'empty-cart-mode' : ''}`} data-theme={theme} data-site-style={siteStyle} dir="rtl">
       <header className="topbar">
         <div className="topbar-inner">
-          <a className="brand" href="#" onClick={(event) => { event.preventDefault(); setActiveNav('خانه') }} aria-label="ایکس کافه، خانه">
-            <span className="brand-mark"><span /></span>
-            <span className="brand-name">ایکس‌کافه<span>.</span></span>
+          <a className="brand" href="#" onClick={(event) => { event.preventDefault(); setActiveNav('خانه') }} aria-label="کافی‌نت ایکس، خانه">
+            <img className="brand-mark" src="/kafinet-x-logo.png" alt="" />
+            <span className="brand-name">کافی‌نت ایکس<span>.</span></span>
           </a>
           <button className="mobile-menu-button" onClick={() => setMobileMenuOpen(!mobileMenuOpen)} aria-label="باز کردن منو"><Icon name="grid" /></button>
           <nav className={`main-nav ${mobileMenuOpen ? 'is-open' : ''}`} aria-label="ناوبری اصلی">
@@ -1060,7 +1326,7 @@ function App() {
           <div className="topbar-actions">
               <label className="search-box">
                 <Icon name="search" size={18} />
-                <input aria-label="جستجو" placeholder="جستجو در ایکس‌کافه..." value={search} onChange={(event) => setSearch(event.target.value)} />
+                <input aria-label="جستجو" placeholder="جستجو در کافی‌نت ایکس..." value={search} onChange={(event) => setSearch(event.target.value)} />
                 <kbd>/</kbd>
               </label>
               <div className="notification-wrap">
@@ -1079,20 +1345,22 @@ function App() {
                 <Icon name="cart" size={19} />
                 {cartCount > 0 && <span className="cart-count">{new Intl.NumberFormat('fa-IR').format(cartCount)}</span>}
               </button>
+              <button type="button" className="header-login-button" onClick={openLoginPage}><Icon name="user" size={16} /><span>ورود</span></button>
               <button className="profile-chip" onClick={() => { setActiveNav('حساب کاربری'); setActivePage('داشبورد') }}>
-                <span className="avatar avatar-user">ن</span>
-                <span className="profile-copy"><strong>نگار محمدی</strong><small>{roleLabels[role]}</small></span>
+                <span className="avatar avatar-user">{profileImages.user ? <img src={profileImages.user} alt="" /> : 'ن'}</span>
+                <span className="profile-copy"><strong>نگار محمدی</strong></span>
                 <span className="chevron">⌄</span>
               </button>
           </div>
         </div>
       </header>
       <header className="compact-header">
-        <a className="brand compact-brand" href="#" onClick={(event) => { event.preventDefault(); setActiveNav('خانه') }} aria-label="ایکس کافه، خانه">
-          <span className="brand-mark"><span /></span>
-          <span className="brand-name">ایکس‌کافه<span>.</span></span>
+        <a className="brand compact-brand" href="#" onClick={(event) => { event.preventDefault(); setActiveNav('خانه') }} aria-label="کافی‌نت ایکس، خانه">
+          <img className="brand-mark" src="/kafinet-x-logo.png" alt="" />
+          <span className="brand-name">کافی‌نت ایکس<span>.</span></span>
         </a>
         <div className="compact-header-actions">
+          <button type="button" className="compact-login-button" onClick={openLoginPage}><Icon name="user" size={16} /><span>ورود</span></button>
           <ThemeToggle theme={theme} onToggle={toggleTheme} />
           <div className="compact-support-wrap" ref={compactSupportMenuRef}>
             <button className="compact-support-button" type="button" aria-label="پشتیبانی" aria-haspopup="menu" aria-expanded={supportMenuOpen} onClick={() => setSupportMenuOpen((current) => !current)}>
@@ -1111,30 +1379,44 @@ function App() {
         </>
       ) : isCart ? (
         <main className="cart-main page-wrap">
-          <div className="breadcrumb"><span>ایکس‌کافه</span><b>/</b><strong>سبد خرید</strong></div>
+          <div className="breadcrumb"><span>کافی‌نت ایکس</span><b>/</b><strong>سبد خرید</strong></div>
           <CartPage items={cart} onChangeQuantity={changeCartQuantity} onRemove={removeFromCart} onBrowse={() => { setCartNotice(''); setActiveNav('خدمات') }} onDemoPayment={completeDemoPayment} />
         </main>
       ) : <main className="page-wrap">
-        <div className="breadcrumb"><span>ایکس‌کافه</span><b>/</b><span>{activeNav}</span><b>/</b><strong>{contentTitle}</strong></div>
-        <div className={`workspace ${isSidebarlessPage ? 'workspace-no-sidebar' : ''}`}>
-          {!isSidebarlessPage && <aside className="sidebar">
+        <div className="breadcrumb"><span>کافی‌نت ایکس</span><b>/</b><span>{activeNav}</span><b>/</b><strong>{contentTitle}</strong></div>
+        <div className={`workspace ${isSidebarlessPage ? 'workspace-no-sidebar' : sidebarCollapsed ? 'sidebar-collapsed' : 'sidebar-expanded'}`}>
+          {!isSidebarlessPage && <aside className={`sidebar ${sidebarCollapsed ? 'sidebar-collapsed' : 'sidebar-expanded'}`} id="account-sidebar">
             <div className="account-card">
-              <div className="account-avatar-wrap">
-                <span className={`avatar account-avatar avatar-${role}`}>{role === 'admin' ? 'ا' : role === 'operator' ? 'س' : 'ن'}</span>
-                <span className="online-dot" />
+              <div className="account-topline">
+                <div className="account-avatar-wrap">
+                  <span className={`avatar account-avatar avatar-${role}`} title={roleLabels[role]}>{profileImages[role] ? <img src={profileImages[role]} alt="" /> : role === 'admin' ? 'ا' : role === 'operator' ? 'س' : 'ن'}</span>
+                  <span className="online-dot" />
+                </div>
               </div>
               <div className="account-name">{role === 'admin' ? 'آرمان رضایی' : role === 'operator' ? 'سارا احمدی' : 'نگار محمدی'}</div>
               <div className="account-email">{role === 'admin' ? 'admin@xcafinet.ir' : role === 'operator' ? 'sara@xcafinet.ir' : 'negar@email.com'}</div>
               <div className="role-switcher" aria-label="انتخاب پنل">
                 {(['user', 'operator', 'admin'] as Role[]).map((item) => (
-                  <button key={item} className={role === item ? 'selected' : ''} onClick={() => switchRole(item)}>{roleLabels[item]}</button>
+                <button key={item} type="button" className={role === item ? 'selected' : ''} aria-label={roleLabels[item]} title={roleLabels[item]} onClick={() => switchRole(item)}>
+                  <Icon name={item === 'user' ? 'user' : item === 'operator' ? 'support' : 'users'} size={16} />
+                  <span>{roleLabels[item]}</span>
+                </button>
                 ))}
               </div>
             </div>
+            <button
+              type="button"
+              className={`sidebar-toggle ${sidebarCollapsed ? '' : 'expanded'}`}
+              aria-label={sidebarCollapsed ? 'باز کردن سایدبار' : 'بستن سایدبار'}
+              aria-expanded={!sidebarCollapsed}
+              aria-controls="account-sidebar"
+              title={sidebarCollapsed ? 'باز کردن سایدبار' : 'بستن سایدبار'}
+              onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
+            ><Icon name="chevron" size={18} /></button>
             <div className="sidebar-label">منوی {roleLabels[role]}</div>
-            <nav className="side-nav" aria-label={`منوی ${roleLabels[role]}`}>
+            <nav className="side-nav" id="account-sidebar-nav" aria-label={`منوی ${roleLabels[role]}`}>
               {sidebarItems[role].map((item) => (
-                <button key={item.label} className={`side-link ${activePage === item.label && activeNav === 'حساب کاربری' ? 'active' : ''}`} onClick={() => { setActivePage(item.label); setActiveNav('حساب کاربری') }}>
+              <button key={item.label} type="button" className={`side-link ${activePage === item.label && activeNav === 'حساب کاربری' ? 'active' : ''}`} aria-label={item.label} title={item.label} onClick={() => { setActivePage(item.label); setActiveNav('حساب کاربری') }}>
                   <Icon name={item.icon} size={18} />
                   <span>{item.label}</span>
                   {item.label === 'گفتگوها' && conversationCount > 0 && <span className="side-count">{new Intl.NumberFormat('fa-IR').format(conversationCount)}</span>}
@@ -1142,13 +1424,7 @@ function App() {
               ))}
             </nav>
             <div className="sidebar-bottom">
-              <div className="help-card">
-                <div className="help-icon"><Icon name="support" size={19} /></div>
-                <strong>نیاز به راهنمایی دارید؟</strong>
-                <span>ما همیشه کنار شما هستیم.</span>
-                <button onClick={() => { setActiveNav('حساب کاربری'); setActivePage('گفتگوها') }}>ارتباط با پشتیبانی <Icon name="arrow" size={14} /></button>
-              </div>
-              <button className="logout-link"><Icon name="logout" size={18} /> خروج از حساب</button>
+              <button type="button" className="logout-link" aria-label="خروج از حساب" title="خروج از حساب" onClick={handleLogout}><Icon name="logout" size={18} /><span>خروج از حساب</span></button>
               <div className="sidebar-footer">ساخته‌شده با <span>♥</span> برای شما <b>نسخه ۱.۴.۰</b></div>
             </div>
           </aside>}
@@ -1159,7 +1435,7 @@ function App() {
             ) : activePage === 'داشبورد' ? (
               <Dashboard role={role} range={range} setRange={setRange} search={search} setActivePage={setActivePage} setActiveNav={setActiveNav} walletBalance={demoWalletBalance} />
             ) : (
-              <PanelPage page={activePage} role={role} search={search} catalog={catalog} events={events} siteStyle={siteStyle} setSiteStyle={setSiteStyle} addCategory={addCategory} addService={addService} updateCategory={updateCategory} deleteCategory={deleteCategory} updateService={updateService} deleteService={deleteService} addEvent={addEvent} deleteEvent={deleteEvent} demoOrders={demoOrders} activeDemoOrderId={activeDemoOrderId} onOpenDemoOrder={setActiveDemoOrderId} onSendDemoMessage={sendDemoMessage} onOfferAdditionalService={offerDemoAdditionalService} onStartAdditionalServicePayment={startDemoAdditionalServicePayment} onCompleteAdditionalServicePayment={completeDemoAdditionalServicePayment} onCloseDemoConversation={closeDemoConversation} onCancelDemoOrder={cancelDemoOrder} walletBalance={demoWalletBalance} />
+              <PanelPage page={activePage} role={role} profileImage={profileImages[role] ?? ''} onProfileImageChange={updateProfileImage} search={search} catalog={catalog} events={events} siteStyle={siteStyle} setSiteStyle={setSiteStyle} addCategory={addCategory} addService={addService} updateCategory={updateCategory} deleteCategory={deleteCategory} updateService={updateService} deleteService={deleteService} addEvent={addEvent} deleteEvent={deleteEvent} demoOrders={demoOrders} activeDemoOrderId={activeDemoOrderId} onOpenDemoOrder={setActiveDemoOrderId} onSendDemoMessage={sendDemoMessage} onOfferAdditionalService={offerDemoAdditionalService} onStartAdditionalServicePayment={startDemoAdditionalServicePayment} onCompleteAdditionalServicePayment={completeDemoAdditionalServicePayment} onCloseDemoConversation={closeDemoConversation} onCancelDemoOrder={cancelDemoOrder} walletBalance={demoWalletBalance} />
             )}
           </section>
         </div>
@@ -1204,9 +1480,32 @@ function Dashboard({
 }) {
   const isAdmin = role === 'admin'
   const isOperator = role === 'operator'
+  const [openOrderMenuId, setOpenOrderMenuId] = useState<string | null>(null)
+  const [selectedDashboardOrder, setSelectedDashboardOrder] = useState<(typeof orders)[number] | null>(null)
   const title = isAdmin ? 'آرمان عزیز، خوش آمدی 👋' : isOperator ? 'سلام سارا، روزت بخیر 👋' : 'صبح بخیر نگار جان 👋'
   const subtitle = isAdmin ? 'اینجا می‌تونی همه‌چیز رو زیر نظر داشته باشی.' : isOperator ? 'آماده‌ای امروز به چند نفر کمک کنی؟' : 'از اینجا همه‌چیز در دسترس توئه. امروز چطور می‌تونیم کمکت کنیم؟'
   const filteredOrders = orders.filter((order) => `${order.id} ${order.service} ${order.status}`.includes(search.trim()))
+
+  useEffect(() => {
+    if (!openOrderMenuId && !selectedDashboardOrder) return
+
+    const closeMenuOnOutsideClick = (event: PointerEvent) => {
+      if (!(event.target instanceof Element) || event.target.closest('.dashboard-order-actions')) return
+      setOpenOrderMenuId(null)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      if (selectedDashboardOrder) setSelectedDashboardOrder(null)
+      else setOpenOrderMenuId(null)
+    }
+
+    document.addEventListener('pointerdown', closeMenuOnOutsideClick)
+    window.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeMenuOnOutsideClick)
+      window.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [openOrderMenuId, selectedDashboardOrder])
 
   return (
     <>
@@ -1247,7 +1546,7 @@ function Dashboard({
           <div className="panel-heading"><div><h2>{isAdmin ? 'خلاصه کیف پول' : isOperator ? 'وضعیت امروز' : 'کیف پول من'}</h2><p>{isAdmin ? 'موجودی حساب پلتفرم' : isOperator ? 'گزارش فعالیت روزانه' : 'موجودی قابل استفاده'}</p></div><button className="more-button" aria-label="گزینه‌های بیشتر"><Icon name="more" /></button></div>
           <div className="balance-card">
             <div className="balance-top"><span>{isOperator ? 'گفتگوهای پاسخ‌داده‌شده' : 'موجودی فعلی'}</span><span className="balance-card-icon"><Icon name={isOperator ? 'chat' : 'wallet'} size={18} /></span></div>
-            <div className="balance-amount">{isOperator ? '۲۸' : isAdmin ? '۱۲۸,۴۰۰,۰۰۰' : new Intl.NumberFormat('fa-IR').format(walletBalance)} <small>{isOperator ? 'گفتگو' : 'ریال'}</small></div>
+            <div className="balance-amount">{isOperator ? '۲۸' : new Intl.NumberFormat('fa-IR').format(isAdmin ? demoAdminWalletBalance : walletBalance)} <small>{isOperator ? 'گفتگو' : 'ریال'}</small></div>
             <div className="balance-footer"><span><i /> {isOperator ? '۴ گفتگوی تازه' : 'به‌روز در همین لحظه'}</span><Icon name="arrow" size={15} /></div>
           </div>
           <div className="balance-actions">
@@ -1268,16 +1567,52 @@ function Dashboard({
             <thead><tr><th>{isOperator ? 'مشتری' : 'عنوان سفارش'}</th><th>کد سفارش</th><th>تاریخ ثبت</th><th>مبلغ</th><th>وضعیت</th><th /></tr></thead>
             <tbody>{filteredOrders.length ? filteredOrders.map((order) => (
               <tr key={order.id}>
-                <td><div className="service-cell"><span className={`service-icon ${order.tone}`}>{isOperator ? order.initials : <Icon name="grid" size={17} />}</span><strong>{isOperator ? 'مریم کریمی' : order.service}<small>{isOperator ? order.service : 'خدمات ایکس‌کافه'}</small></strong></div></td>
+                <td><div className="service-cell"><span className={`service-icon ${order.tone}`}>{isOperator ? order.initials : <Icon name="grid" size={17} />}</span><strong>{isOperator ? 'مریم کریمی' : order.service}<small>{isOperator ? order.service : 'خدمات کافی‌نت ایکس'}</small></strong></div></td>
                 <td className="order-id">{order.id}</td><td>{order.date}</td><td className="amount-cell">{order.amount} <small>ریال</small></td>
                 <td><span className={`status-pill ${order.tone === 'purple' ? 'in-progress' : 'complete'}`}><i />{isOperator && order.tone === 'purple' ? 'پاسخ جدید' : order.status}</span></td>
-                <td><button className="row-more" aria-label={`گزینه‌های ${order.id}`}><Icon name="more" size={18} /></button></td>
+                <td>{isAdmin ? (
+                  <div className="dashboard-order-actions">
+                    <button
+                      type="button"
+                      className="row-more"
+                      aria-label={`گزینه‌های ${order.id}`}
+                      aria-haspopup="menu"
+                      aria-expanded={openOrderMenuId === order.id}
+                      onClick={() => setOpenOrderMenuId((current) => current === order.id ? null : order.id)}
+                    ><Icon name="more" size={18} /></button>
+                    {openOrderMenuId === order.id && <div className="dashboard-order-menu" role="menu">
+                      <button type="button" role="menuitem" onClick={() => {
+                        setOpenOrderMenuId(null)
+                        setSelectedDashboardOrder(order)
+                      }}><Icon name="receipt" size={15} /> مشاهده جزئیات</button>
+                    </div>}
+                  </div>
+                ) : <button className="row-more" aria-label={`گزینه‌های ${order.id}`}><Icon name="more" size={18} /></button>}</td>
               </tr>
             )) : <tr><td className="empty-row" colSpan={6}>سفارشی با این عبارت پیدا نشد.</td></tr>}</tbody>
           </table>
         </div>
       </section>
-      <div className="dashboard-bottom-note"><Icon name="sparkle" size={15} /> به جمع <strong>۱۲,۰۰۰+</strong> کاربر خوش‌سلیقهٔ ایکس‌کافه خوش اومدی!</div>
+      <div className="dashboard-bottom-note"><Icon name="sparkle" size={15} /> به جمع <strong>۱۲,۰۰۰+</strong> کاربر خوش‌سلیقهٔ کافی‌نت ایکس خوش اومدی!</div>
+      {selectedDashboardOrder && <div className="public-service-details-backdrop" onMouseDown={(event) => {
+        if (event.target === event.currentTarget) setSelectedDashboardOrder(null)
+      }}>
+        <section className="public-service-details-dialog dashboard-order-details-dialog" role="dialog" aria-modal="true" aria-labelledby="dashboard-order-details-title">
+          <div className="public-service-details-heading">
+            <div>
+              <span className="service-category-label">سفارش {selectedDashboardOrder.id}</span>
+              <h2 id="dashboard-order-details-title">{selectedDashboardOrder.service}</h2>
+            </div>
+            <button type="button" className="close-category-dialog" aria-label="بستن جزئیات سفارش" onClick={() => setSelectedDashboardOrder(null)}>×</button>
+          </div>
+          <dl className="dashboard-order-details-list">
+            <div><dt>کد سفارش</dt><dd>{selectedDashboardOrder.id}</dd></div>
+            <div><dt>تاریخ ثبت</dt><dd>{selectedDashboardOrder.date}</dd></div>
+            <div><dt>مبلغ</dt><dd>{selectedDashboardOrder.amount} ریال</dd></div>
+            <div><dt>وضعیت</dt><dd><span className={`status-pill ${selectedDashboardOrder.tone === 'purple' ? 'in-progress' : 'complete'}`}><i />{selectedDashboardOrder.status}</span></dd></div>
+          </dl>
+        </section>
+      </div>}
     </>
   )
 }
@@ -2089,6 +2424,8 @@ function SectionPage({
   const isWallet = section === 'کیف پول'
   const isAbout = section === 'درباره ما'
   const isContact = section === 'تماس با ما'
+  const isAdminWallet = isWallet && role === 'admin'
+  const displayedWalletBalance = isAdminWallet ? demoAdminWalletBalance : walletBalance
   const title = isServices
     ? 'خدماتی برای یک تجربه بهتر'
     : isEvents
@@ -2096,7 +2433,7 @@ function SectionPage({
       : isWallet
         ? 'کیف پول و تراکنش‌ها'
         : isAbout
-          ? 'دربارهٔ ایکس‌کافه'
+          ? 'دربارهٔ کافی‌نت ایکس'
           : isContact
             ? 'با ما در تماس باش'
             : 'به خانه خوش آمدی'
@@ -2105,9 +2442,11 @@ function SectionPage({
     : isEvents
       ? 'ببین چی بازه و چقدر وقت داری!'
       : isWallet
-        ? 'موجودی و گردش حساب خودت را یک‌جا مدیریت کن.'
+        ? isAdminWallet
+          ? 'موجودی حساب پلتفرم و گردش مالی را یک‌جا بررسی کنید.'
+          : 'موجودی و گردش حساب خودت را یک‌جا مدیریت کن.'
         : isAbout
-          ? 'اینجا دربارهٔ فضای ایکس‌کافه و کاری که انجام می‌دهیم بیشتر بدان.'
+          ? 'اینجا دربارهٔ فضای کافی‌نت ایکس و کاری که انجام می‌دهیم بیشتر بدان.'
           : isContact
             ? 'برای پرسش یا پیگیری سفارش، از راه گفت‌وگو با پشتیبانی با ما در ارتباط باش.'
             : 'فضای شخصی تو برای تجربهٔ خدمات بهتر.'
@@ -2115,13 +2454,60 @@ function SectionPage({
     <>
       <div className="welcome-row section-welcome">
         <div><div className="eyebrow"><span className="eyebrow-dot" /> {section}</div><h1>{title}</h1><p>{description}</p></div>
-        {!isAbout && !isContact && !isEvents && <button className="primary-button"><Icon name={isWallet ? 'plus' : 'sparkle'} size={17} />{isWallet ? 'افزایش موجودی' : 'شروع کن'}</button>}
+        {!isAbout && !isContact && !isEvents && !isWallet && <button className="primary-button"><Icon name="sparkle" size={17} />شروع کن</button>}
       </div>
       {isWallet ? (
         <div className="wallet-view">
-          <div className="wallet-highlight"><div><span>موجودی کیف پول شما</span><strong>{new Intl.NumberFormat('fa-IR').format(walletBalance)} <small>ریال</small></strong><p><i /> آخرین به‌روزرسانی همین حالا</p></div><span className="wallet-art"><Icon name="wallet" size={35} /></span></div>
-          <div className="wallet-quick"><button><Icon name="plus" /> افزایش موجودی</button><button><Icon name="receipt" /> همه تراکنش‌ها</button></div>
-          <div className="panel wallet-transaction"><h2>تراکنش‌های اخیر</h2>{orders.map((order) => <div className="transaction-row" key={order.id}><span className={`service-icon ${order.tone}`}><Icon name="receipt" size={16} /></span><div><strong>{order.service}</strong><small>{order.date}</small></div><b>− {order.amount} <small>ریال</small></b></div>)}</div>
+          <section className="wallet-highlight" aria-labelledby="wallet-balance-heading">
+            <div className="wallet-card-top">
+              <div className="wallet-card-brand">
+                <span className="wallet-art"><Icon name="wallet" size={20} /></span>
+                <div><span>{isAdminWallet ? 'حساب مدیریت' : 'حساب کاربری'}</span><strong>کیف پول</strong></div>
+              </div>
+              <span className="wallet-card-status"><i /> فعال</span>
+            </div>
+            <div className="wallet-balance-copy">
+              <span id="wallet-balance-heading">{isAdminWallet ? 'موجودی حساب پلتفرم' : 'موجودی قابل استفاده'}</span>
+              <strong>{new Intl.NumberFormat('fa-IR').format(displayedWalletBalance)} <small>ریال</small></strong>
+            </div>
+            <div className="wallet-card-footer">
+              <span><Icon name="check" size={14} /> {isAdminWallet ? 'موجودی حساب پلتفرم' : 'قابل استفاده برای سفارش‌های شما'}</span>
+              <span>کافی‌نت ایکس</span>
+            </div>
+          </section>
+          <aside className="panel wallet-actions-card" aria-label="عملیات کیف پول">
+            <div className="wallet-actions-heading">
+              <span className="wallet-actions-icon"><Icon name="plus" size={18} /></span>
+              <div><h2>مدیریت موجودی</h2><p>{isAdminWallet ? 'موجودی و تراکنش‌های حساب پلتفرم را مدیریت کنید.' : 'اعتبار کیف پولت را برای سفارش‌ها مدیریت کن.'}</p></div>
+            </div>
+            <div className="wallet-action-buttons">
+              <button className="primary-button wallet-topup-button" type="button"><Icon name="plus" size={16} /> افزایش موجودی</button>
+              <a className="wallet-history-link" href="#wallet-transactions"><Icon name="receipt" size={16} /> مشاهده گردش حساب <Icon name="arrow" size={14} /></a>
+            </div>
+            <p className="wallet-actions-note"><Icon name="check" size={14} /> {isAdminWallet ? 'تراکنش‌های مالی پلتفرم در گردش حساب ثبت می‌شوند.' : 'پرداخت‌ها و بازگشت وجه در گردش حساب ثبت می‌شوند.'}</p>
+          </aside>
+          <section className="panel wallet-transaction" id="wallet-transactions" aria-labelledby="wallet-transactions-heading">
+            <div className="wallet-transaction-header">
+              <div><h2 id="wallet-transactions-heading">گردش کیف پول</h2><p>{isAdminWallet ? 'تراکنش‌های ثبت‌شده و وضعیت سفارش‌های پلتفرم' : 'پرداخت‌های ثبت‌شده و وضعیت سفارش‌ها'}</p></div>
+              <span className="wallet-transaction-count"><Icon name="receipt" size={15} /> {new Intl.NumberFormat('fa-IR').format(orders.length)} تراکنش</span>
+            </div>
+            <div className="wallet-transaction-columns" aria-hidden="true">
+              <span>شرح تراکنش</span><span>تاریخ</span><span>وضعیت</span><span>مبلغ</span>
+            </div>
+            <div className="wallet-transaction-list">
+              {orders.map((order) => (
+                <article className="wallet-transaction-row" key={order.id}>
+                  <div className="wallet-transaction-service">
+                    <span className={`wallet-transaction-icon ${order.tone}`}><Icon name="receipt" size={17} /></span>
+                    <div><strong>{order.service}</strong><small>شماره سفارش {order.id}</small></div>
+                  </div>
+                  <time className="wallet-transaction-date">{order.date}</time>
+                  <span className={`wallet-transaction-status ${order.status === 'تکمیل شده' ? 'complete' : 'in-progress'}`}><i />{order.status}</span>
+                  <div className="wallet-transaction-amount" dir="ltr"><strong>− {order.amount}</strong><small>ریال</small></div>
+                </article>
+              ))}
+            </div>
+          </section>
         </div>
       ) : isEvents ? (
         <div className="event-grid" id="events-list">
@@ -2151,7 +2537,7 @@ function SectionPage({
           <span className="feature-icon violet"><Icon name="users" size={22} /></span>
           <div>
             <h2>خدمات و تجربه‌ها در یک فضای ساده</h2>
-            <p>ایکس‌کافه فضایی یکپارچه برای پیدا کردن و استفاده از خدمات، دنبال‌کردن رویدادها و مدیریت سفارش‌ها فراهم می‌کند؛ پشتیبانی هم برای راهنمایی همراه شماست.</p>
+            <p>کافی‌نت ایکس فضایی یکپارچه برای پیدا کردن و استفاده از خدمات، دنبال‌کردن رویدادها و مدیریت سفارش‌ها فراهم می‌کند؛ پشتیبانی هم برای راهنمایی همراه شماست.</p>
           </div>
         </section>
       ) : isContact ? (
@@ -2174,7 +2560,6 @@ function SectionPage({
           [`پنل ${roleLabels[role]}`, 'مدیریت حساب و تنظیمات', 'user', 'mint'],
         ] as [string, string, IconName, string][]).map(([name, text, icon, tone]) => <article className="feature-card" key={name}><span className={`feature-icon ${tone}`}><Icon name={icon} size={22} /></span><h2>{name}</h2><p>{text}</p><button>مشاهده جزئیات <Icon name="arrow" size={15} /></button></article>)}</div>
       )}
-      {!isEvents && !isAbout && !isContact && <div className="section-bottom-card"><div className="note-icon"><Icon name="sparkle" /></div><div><strong>تجربه‌ای که به سلیقهٔ تو ساخته شده</strong><p>هر روز خدمات و پیشنهادهای تازه‌ای به ایکس‌کافه اضافه می‌کنیم.</p></div></div>}
     </>
   )
 }
@@ -2772,6 +3157,8 @@ function DemoChatDialog({
 function PanelPage({
   page,
   role,
+  profileImage,
+  onProfileImageChange,
   search,
   catalog,
   events,
@@ -2798,6 +3185,8 @@ function PanelPage({
 }: {
   page: string
   role: Role
+  profileImage: string
+  onProfileImageChange: (image: string | null) => boolean
   search: string
   catalog: ServiceCatalogData
   events: AppEvent[]
@@ -2839,7 +3228,7 @@ function PanelPage({
   const setAdminPeople = isAdminUsersPage ? setAdminUsers : setAdminOperators
   const pageDescriptions: Record<string, string> = {
     'کیف پول': 'موجودی و تراکنش‌های حساب خود را مدیریت کنید.',
-    'کاربران': 'فهرست اعضا و وضعیت حساب‌های ایکس‌کافه.',
+    'کاربران': 'فهرست اعضا و وضعیت حساب‌های کافی‌نت ایکس.',
     'اپراتورها': 'مدیریت تیم پشتیبانی و اپراتورهای آنلاین.',
     'گفتگوها': 'پیام‌های تازه را بررسی و به گفتگوها پاسخ دهید.',
     'تنظیمات': 'تنظیمات حساب و ترجیحات پنل را تغییر دهید.',
@@ -2927,7 +3316,7 @@ function PanelPage({
 
   return (
     <>
-      <div className="welcome-row section-welcome"><div><div className="eyebrow"><span className="eyebrow-dot" /> پنل {roleLabels[role]}</div><h1>{page}</h1><p>{pageDescriptions[page] ?? 'خلاصهٔ فعالیت‌ها و اطلاعات حساب شما.'}</p></div>{page !== 'دانلودها' && page !== 'تنظیمات' && page !== 'تنظیمات ظاهری' && page !== 'گفتگوها' && <button className="primary-button" type="button" onClick={isAdminPeoplePage ? () => { setAdminPeopleActionError(''); setAddAdminPersonDialogOpen(true) } : undefined}><Icon name="plus" size={17} />افزودن مورد جدید</button>}</div>
+      {page !== 'کیف پول' && <div className="welcome-row section-welcome"><div><div className="eyebrow"><span className="eyebrow-dot" /> پنل {roleLabels[role]}</div><h1>{page}</h1><p>{pageDescriptions[page] ?? 'خلاصهٔ فعالیت‌ها و اطلاعات حساب شما.'}</p></div>{page !== 'دانلودها' && page !== 'تنظیمات' && page !== 'تنظیمات ظاهری' && page !== 'گفتگوها' && <button className="primary-button" type="button" onClick={isAdminPeoplePage ? () => { setAdminPeopleActionError(''); setAddAdminPersonDialogOpen(true) } : undefined}><Icon name="plus" size={17} />افزودن مورد جدید</button>}</div>}
       {page === 'تنظیمات' && role === 'admin' ? (
         <AdminSettingsPage
           section={adminSettingsSection}
@@ -2935,6 +3324,8 @@ function PanelPage({
           siteStyle={siteStyle}
           setSiteStyle={setSiteStyle}
           role={role}
+          profileImage={profileImage}
+          onProfileImageChange={onProfileImageChange}
           catalog={catalog}
           events={events}
           addCategory={addCategory}
@@ -2948,7 +3339,7 @@ function PanelPage({
         />
       ) : page === 'تنظیمات' || page === 'حساب من' ? (
         <div className="settings-stack">
-          <ProfileSettings role={role} />
+          <ProfileSettings role={role} avatarImage={profileImage} onAvatarChange={onProfileImageChange} />
         </div>
       ) : page === 'تنظیمات ظاهری' ? (
         <AppearanceSettings siteStyle={siteStyle} setSiteStyle={setSiteStyle} />
@@ -3065,7 +3456,7 @@ function PanelPage({
               <thead><tr><th>{page === 'گفتگوها' ? 'موضوع گفتگو' : 'عنوان'}</th><th>شناسه</th><th>تاریخ</th><th>جزئیات</th><th>وضعیت</th><th /></tr></thead>
               <tbody>{matching.map((item) => (
                 <tr key={item.id}>
-                  <td><div className="service-cell"><span className={`service-icon ${item.tone}`}>{item.initials}</span><strong>{item.service}<small>ایکس‌کافه</small></strong></div></td>
+                  <td><div className="service-cell"><span className={`service-icon ${item.tone}`}>{item.initials}</span><strong>{item.service}<small>کافی‌نت ایکس</small></strong></div></td>
                   <td className="order-id">{item.id}</td><td>{item.date}</td><td className="amount-cell">{item.amount}</td>
                   <td><span className={`status-pill ${item.tone === 'purple' ? 'in-progress' : 'complete'}`}><i />{item.status}</span></td>
                   <td><button className="row-more" aria-label="گزینه‌ها"><Icon name="more" size={18} /></button></td>
@@ -3263,19 +3654,111 @@ function AdminUserDialog({ onClose, onSave, initialUser, entityLabel }: {
   )
 }
 
-function ProfileSettings({ role }: { role: Role }) {
+function ProfileSettings({ role, avatarImage, onAvatarChange }: {
+  role: Role
+  avatarImage: string
+  onAvatarChange: (image: string | null) => boolean
+}) {
   const displayName = role === 'admin' ? 'آرمان رضایی' : role === 'operator' ? 'سارا احمدی' : 'نگار محمدی'
+  const [birthDate, setBirthDate] = useState('')
+  const [gender, setGender] = useState<AdminUserGender | ''>('')
+  const [avatarError, setAvatarError] = useState('')
+  const profileImageInputRef = useRef<HTMLInputElement>(null)
+
+  const handleProfileImageChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0]
+    event.currentTarget.value = ''
+    if (!file) return
+
+    setAvatarError('')
+    try {
+      const image = await createProfileImage(file)
+      if (!onAvatarChange(image)) setAvatarError('ذخیرهٔ عکس ناموفق بود. فضای ذخیره‌سازی مرورگر را بررسی کنید.')
+    } catch (error) {
+      console.error('Could not process the selected profile image.', error)
+      setAvatarError(error instanceof Error ? error.message : 'آماده‌سازی عکس ناموفق بود.')
+    }
+  }
 
   return (
     <div className="panel settings-panel">
       <div className="settings-avatar">
-        <span className="avatar avatar-user">ن</span>
+        <span className={`avatar avatar-${role}`}>{avatarImage ? <img src={avatarImage} alt="" /> : role === 'admin' ? 'ا' : role === 'operator' ? 'س' : 'ن'}</span>
         <div><strong>{displayName}</strong><small>عضو از آبان ۱۴۰۳</small></div>
-        <button className="text-button">ویرایش تصویر</button>
+        <div className="profile-avatar-actions">
+          <input ref={profileImageInputRef} type="file" accept="image/jpeg,image/png,image/webp" aria-label="انتخاب عکس پروفایل" hidden onChange={handleProfileImageChange} />
+          <button type="button" className="text-button" onClick={() => profileImageInputRef.current?.click()}>{avatarImage ? 'تغییر تصویر' : 'افزودن تصویر'}</button>
+          {avatarImage && <button type="button" className="text-button" onClick={() => {
+            setAvatarError('')
+            if (!onAvatarChange(null)) setAvatarError('حذف عکس ذخیره نشد. دوباره تلاش کنید.')
+          }}>حذف تصویر</button>}
+        </div>
       </div>
-      {[['نام و نام خانوادگی', demoUserName], ['ایمیل', 'negar@email.com'], ['شماره همراه', demoUserPhone]].map(([label, value]) => (
-        <label className="settings-field" key={label}><span>{label}</span><input defaultValue={value} /></label>
-      ))}
+      {avatarError && <p className="user-form-error" role="alert">{avatarError}</p>}
+      <div className="profile-fields-grid">
+        <label className="settings-field">
+          <span>نام و نام خانوادگی</span>
+          <input autoComplete="name" defaultValue={displayName} required maxLength={100} />
+        </label>
+        <label className="settings-field">
+          <span>شماره همراه</span>
+          <input type="tel" inputMode="tel" autoComplete="tel" defaultValue={role === 'user' ? demoUserPhone : ''} required maxLength={20} />
+        </label>
+        <label className="settings-field">
+          <span>کد ملی</span>
+          <input inputMode="numeric" autoComplete="off" placeholder="۱۰ رقم" required maxLength={10} />
+        </label>
+        <label className="settings-field">
+          <span>تاریخ تولد <small>(اختیاری)</small></span>
+          <DatePicker
+            containerClassName="event-date-picker"
+            calendar={persian}
+            locale={persianFa}
+            format="YYYY/MM/DD"
+            calendarPosition="bottom-right"
+            maxDate={maxBirthDate}
+            onOpenPickNewDate={false}
+            value={birthDate ? dateFromIso(birthDate) : ''}
+            onChange={(date) => setBirthDate(date ? dateToIso(date.toDate()) : '')}
+            render={(_, openCalendar) => (
+              <input
+                type="text"
+                className="event-date-input"
+                aria-label="تاریخ تولد (شمسی، اختیاری)"
+                value={birthDate ? formatPersianDateInput(birthDate) : ''}
+                placeholder="انتخاب تاریخ شمسی"
+                onClick={openCalendar}
+                onFocus={openCalendar}
+                readOnly
+              />
+            )}
+          />
+        </label>
+        <label className="settings-field">
+          <span>جنسیت <small>(اختیاری)</small></span>
+          <select value={gender} onChange={(event) => {
+            const value = event.target.value
+            setGender(value === 'female' || value === 'male' || value === 'undisclosed' ? value : '')
+          }}>
+            <option value="">انتخاب نشده</option>
+            <option value="female">زن</option>
+            <option value="male">مرد</option>
+            <option value="undisclosed">ترجیح می‌دهم نگویم</option>
+          </select>
+        </label>
+        <label className="settings-field">
+          <span>ایمیل <small>(اختیاری)</small></span>
+          <input type="email" autoComplete="email" defaultValue={role === 'user' ? 'negar@email.com' : ''} maxLength={254} />
+        </label>
+        <label className="settings-field profile-address-field">
+          <span>نشانی</span>
+          <textarea autoComplete="street-address" rows={3} required maxLength={500} placeholder="نشانی کامل محل سکونت" />
+        </label>
+        <label className="settings-field">
+          <span>کد پستی</span>
+          <input inputMode="numeric" autoComplete="postal-code" placeholder="۱۰ رقم" required maxLength={10} />
+        </label>
+      </div>
       <button className="primary-button settings-save">ذخیره تغییرات</button>
     </div>
   )
@@ -3464,6 +3947,8 @@ function AdminSettingsPage({
   siteStyle,
   setSiteStyle,
   role,
+  profileImage,
+  onProfileImageChange,
   catalog,
   events,
   addCategory,
@@ -3480,6 +3965,8 @@ function AdminSettingsPage({
   siteStyle: SiteStyle
   setSiteStyle: (siteStyle: SiteStyle) => void
   role: Role
+  profileImage: string
+  onProfileImageChange: (image: string | null) => boolean
   catalog: ServiceCatalogData
   events: AppEvent[]
   addCategory: (category: CatalogCategory) => void
@@ -3510,7 +3997,7 @@ function AdminSettingsPage({
       </nav>
       <div className="admin-settings-content">
         {section === 'profile' ? (
-          <ProfileSettings role={role} />
+          <ProfileSettings role={role} avatarImage={profileImage} onAvatarChange={onProfileImageChange} />
         ) : section === 'catalog' ? (
           <CatalogManager catalog={catalog} addCategory={addCategory} addService={addService} updateCategory={updateCategory} deleteCategory={deleteCategory} updateService={updateService} deleteService={deleteService} />
         ) : section === 'events' ? (
@@ -3525,11 +4012,11 @@ function AdminSettingsPage({
 
 function AppearanceSettings({ siteStyle, setSiteStyle }: { siteStyle: SiteStyle; setSiteStyle: (siteStyle: SiteStyle) => void }) {
   const [activeTab, setActiveTab] = useState<AppearanceTab>('site')
-  const [activeStyleGroup, setActiveStyleGroup] = useState<AppearanceStyleGroup>(() => siteStyle === 'simple' || siteStyle === 'glass' ? 'simple' : 'neumorphic')
+  const [activeStyleGroup, setActiveStyleGroup] = useState<AppearanceStyleGroup>(() => siteStyle === 'simple' || siteStyle === 'glass' || siteStyle === 'liquid' ? 'simple' : 'neumorphic')
   const activeStyle = siteStyleOptions.find((option) => option.id === siteStyle)
   const visibleStyleOptions = siteStyleOptions.filter((option) => activeStyleGroup === 'simple'
-    ? option.id === 'simple' || option.id === 'glass'
-    : option.id !== 'simple' && option.id !== 'glass')
+    ? option.id === 'simple' || option.id === 'glass' || option.id === 'liquid'
+    : option.id !== 'simple' && option.id !== 'glass' && option.id !== 'liquid')
 
   return (
     <>
@@ -3543,10 +4030,10 @@ function AppearanceSettings({ siteStyle, setSiteStyle }: { siteStyle: SiteStyle;
             <div><h2>سبک ظاهری سایت</h2><p>هر سبک را انتخاب کنید تا ظاهر کل سایت همان لحظه تغییر کند.</p></div>
           </div>
           <div className="site-style-groups" role="group" aria-label="گروه‌های سبک سایت">
-            <button type="button" className="site-style-group-button" aria-pressed={activeStyleGroup === 'simple'} onClick={() => setActiveStyleGroup('simple')}>حالت ساده</button>
+            <button type="button" className="site-style-group-button" aria-pressed={activeStyleGroup === 'simple'} onClick={() => setActiveStyleGroup('simple')}>حالت‌های بیشتر</button>
             <button type="button" className="site-style-group-button" aria-pressed={activeStyleGroup === 'neumorphic'} onClick={() => setActiveStyleGroup('neumorphic')}>حالت نئومورفیسم</button>
           </div>
-          <div className="site-style-options" role="group" aria-label={activeStyleGroup === 'simple' ? 'سبک‌های ساده' : 'مدل‌های نئومورفیک'}>
+          <div className="site-style-options" role="group" aria-label={activeStyleGroup === 'simple' ? 'حالت‌های بیشتر' : 'مدل‌های نئومورفیک'}>
             {visibleStyleOptions.map((option) => (
               <button key={option.id} type="button" className={`appearance-style-option ${siteStyle === option.id ? 'selected' : ''}`} aria-pressed={siteStyle === option.id} onClick={() => setSiteStyle(option.id)}>
                 <span className={`site-style-preview preview-${option.id}`} aria-hidden="true"><i /><b /></span>

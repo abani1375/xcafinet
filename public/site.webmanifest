@@ -1,6 +1,6 @@
 {
-  "name": "ایکس‌کافه",
-  "short_name": "ایکس‌کافه",
+  "name": "کافی‌نت ایکس",
+  "short_name": "کافی‌نت ایکس",
   "description": "خدمات، سفارش‌ها و پشتیبانی در یک جا.",
   "lang": "fa",
   "dir": "rtl",
@@ -10,10 +10,10 @@
   "theme_color": "#f7f8fc",
   "icons": [
     {
-      "src": "/app-icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "src": "/kafinet-x-logo.png",
+      "sizes": "739x601",
+      "type": "image/png",
+      "purpose": "any"
     }
   ]
 }
