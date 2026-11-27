@@ -21,7 +21,7 @@ const siteStyleOptions = [
   { id: 'colored', label: 'رنگی', description: 'سایه‌ها و سطح‌ها با رنگ تأکیدی هماهنگ‌اند.' },
 ] as const
 type SiteStyle = typeof siteStyleOptions[number]['id']
-type AdminSettingsSection = 'profile' | 'catalog' | 'events' | 'appearance'
+type AdminSettingsSection = 'profile' | 'catalog' | 'events' | 'analytics' | 'seo' | 'appearance'
 type AppearanceTab = 'site' | 'header'
 type AppearanceStyleGroup = 'simple' | 'neumorphic'
 type CatalogCategory = { id: string; name: string; description: string; icon?: string }
@@ -3991,6 +3991,8 @@ function AdminSettingsPage({
     { id: 'profile', label: 'مشخصات من', icon: 'user' },
     { id: 'catalog', label: 'دسته‌بندی و خدمات', icon: 'grid' },
     { id: 'events', label: 'رویدادها', icon: 'calendar' },
+    { id: 'analytics', label: 'آمار بازدید سایت', icon: 'chart' },
+    { id: 'seo', label: 'سئو سایت', icon: 'globe' },
     { id: 'appearance', label: 'تنظیمات ظاهری', icon: 'settings' },
   ]
 
@@ -4011,11 +4013,44 @@ function AdminSettingsPage({
           <CatalogManager catalog={catalog} addCategory={addCategory} addService={addService} updateCategory={updateCategory} deleteCategory={deleteCategory} updateService={updateService} deleteService={deleteService} />
         ) : section === 'events' ? (
           <EventManager events={events} catalog={catalog} addEvent={addEvent} deleteEvent={deleteEvent} />
+        ) : section === 'analytics' ? (
+          <AdminSettingsNoticePage
+            icon="chart"
+            title="آمار بازدید سایت"
+            description="گزارش بازدیدها و میزان استفاده از سایت."
+            notice="هنوز ابزار ثبت آمار بازدید به سایت متصل نشده است؛ بنابراین در حال حاضر آمار واقعی برای نمایش وجود ندارد."
+          />
+        ) : section === 'seo' ? (
+          <AdminSettingsNoticePage
+            icon="globe"
+            title="سئو سایت"
+            description="بررسی عنوان، توضیحات و وضعیت دیده‌شدن سایت در موتورهای جست‌وجو."
+            notice="تنظیمات سئو هنوز به سامانهٔ منتشرشدهٔ سایت متصل نیست؛ تغییرات این بخش تا زمان اتصال، روی سایت اعمال نمی‌شوند."
+          />
         ) : (
           <AppearanceSettings siteStyle={siteStyle} setSiteStyle={setSiteStyle} />
         )}
       </div>
     </div>
+  )
+}
+
+function AdminSettingsNoticePage({ icon, title, description, notice }: {
+  icon: IconName
+  title: string
+  description: string
+  notice: string
+}) {
+  return (
+    <section className="panel appearance-panel admin-settings-info-panel">
+      <div className="panel-heading">
+        <div className="catalog-manager-heading">
+          <span className="metric-icon purple"><Icon name={icon} size={19} /></span>
+          <div><h2>{title}</h2><p>{description}</p></div>
+        </div>
+      </div>
+      <p className="admin-settings-info-message" role="status">{notice}</p>
+    </section>
   )
 }
 

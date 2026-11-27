@@ -85,14 +85,12 @@ export default function OtpVerification({ contact, onContinue, embedded = false 
   const [invalidCode, setInvalidCode] = useState(false)
   const [hasError, setHasError] = useState(false)
   const [status, setStatus] = useState('')
-  const [messageVisible, setMessageVisible] = useState(false)
   const [continued, setContinued] = useState(false)
+  const [loginStatusVisible, setLoginStatusVisible] = useState(false)
   const phaseRef = useRef<OtpPhase>('input')
   const inputRef = useRef<HTMLInputElement>(null)
-  const continueButtonRef = useRef<HTMLButtonElement>(null)
   const verificationTimerRef = useRef<number | null>(null)
   const errorTimerRef = useRef<number | null>(null)
-  const messageTimerRef = useRef<number | null>(null)
   const popTimerRef = useRef<number | null>(null)
   const continueTimerRef = useRef<number | null>(null)
   const countdownActive = phase !== 'success' && remaining > 0
@@ -111,13 +109,17 @@ export default function OtpVerification({ contact, onContinue, embedded = false 
     setHasError(false)
     setStatus('')
     setIsFocused(false)
-    setMessageVisible(false)
     inputRef.current?.blur()
 
     verificationTimerRef.current = window.setTimeout(() => {
       if (isCorrect) {
         moveToPhase('success')
         setStatus('')
+        setContinued(true)
+        continueTimerRef.current = window.setTimeout(() => {
+          setLoginStatusVisible(true)
+          continueTimerRef.current = window.setTimeout(onContinue, 900)
+        }, 2000)
         return
       }
 
@@ -148,45 +150,21 @@ export default function OtpVerification({ contact, onContinue, embedded = false 
     if (nextCode.length === 4) startVerification(nextCode)
   }
 
-  const handleFillDemoCode = () => {
-    if (phaseRef.current !== 'input') return
-
-    inputRef.current?.focus({ preventScroll: true })
-    setCode(DEMO_CODE)
-    setHasError(false)
-    setStatus('')
-    setMessageVisible(false)
-    setPopIndex(3)
-    startVerification(DEMO_CODE)
-  }
-
   const handleResend = () => {
     if (phaseRef.current !== 'input' || remaining > 0) return
 
     setRemaining(25)
-    setMessageVisible(true)
     setStatus('کد تأیید دوباره ارسال شد.')
     setIsFocused(true)
     inputRef.current?.focus({ preventScroll: true })
   }
 
-  const handleContinue = () => {
-    if (phaseRef.current !== 'success' || continued) return
-
-    setContinued(true)
-    continueTimerRef.current = window.setTimeout(onContinue, 700)
-  }
-
   useEffect(() => {
     inputRef.current?.focus({ preventScroll: true })
-    messageTimerRef.current = window.setTimeout(() => {
-      if (phaseRef.current === 'input') setMessageVisible(true)
-    }, 1100)
 
     return () => {
       if (verificationTimerRef.current !== null) window.clearTimeout(verificationTimerRef.current)
       if (errorTimerRef.current !== null) window.clearTimeout(errorTimerRef.current)
-      if (messageTimerRef.current !== null) window.clearTimeout(messageTimerRef.current)
       if (popTimerRef.current !== null) window.clearTimeout(popTimerRef.current)
       if (continueTimerRef.current !== null) window.clearTimeout(continueTimerRef.current)
     }
@@ -202,10 +180,6 @@ export default function OtpVerification({ contact, onContinue, embedded = false 
     return () => window.clearInterval(timer)
   }, [countdownActive])
 
-  useEffect(() => {
-    if (phase === 'success') continueButtonRef.current?.focus({ preventScroll: true })
-  }, [phase])
-
   const maskedContact = maskContact(contact)
   const confirmationMessage = contact.includes('@')
     ? 'ایمیل شما تأیید شد.'
@@ -218,6 +192,7 @@ export default function OtpVerification({ contact, onContinue, embedded = false 
     hasError ? 'error' : '',
     status ? 'has-status' : '',
     continued ? 'continued' : '',
+    loginStatusVisible ? 'login-status-visible' : '',
   ].filter(Boolean).join(' ')
 
   return (
@@ -316,45 +291,17 @@ export default function OtpVerification({ contact, onContinue, embedded = false 
           </p>
 
           <div
-            aria-hidden={!messageVisible || phase !== 'input'}
-            className={`otp-message${messageVisible && phase === 'input' ? ' show' : ''}`}
+            className="otp-success-actions"
+            aria-hidden={phase !== 'success' || !loginStatusVisible}
+            aria-live="polite"
+            role="status"
           >
-            <span className="otp-message-icon" aria-hidden="true">
-              <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-                <path d="M20 11.5a8 8 0 0 1-8 8H5l-3 2 2-6a8 8 0 1 1 16-4Z" />
-              </svg>
-            </span>
-            <span className="otp-message-copy">
-              <span className="otp-message-label">MESSAGE · OTP</span>
-              کد تأیید شما: <b>{toFarsiDigits(DEMO_CODE)}</b>
-            </span>
-            <button
-              className="otp-fill-button"
-              disabled={!messageVisible || phase !== 'input'}
-              onClick={handleFillDemoCode}
-              tabIndex={messageVisible && phase === 'input' ? 0 : -1}
-              type="button"
-            >
-              درج کد
-            </button>
-          </div>
-
-          <div className="otp-success-actions" aria-hidden={phase !== 'success'}>
-            <span className="otp-secure">
-              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <rect x="4" y="10" width="16" height="11" rx="3" />
-                <path d="M8 10V7a4 4 0 0 1 8 0v3" />
-              </svg>
-              {continued ? 'آمادهٔ ادامه هستی' : 'تأیید شد، با خیال راحت'}
-            </span>
             <button
               className="otp-continue-button"
-              onClick={handleContinue}
-              ref={continueButtonRef}
-              tabIndex={phase === 'success' ? 0 : -1}
+              disabled
               type="button"
             >
-              {continued ? 'تأیید شد' : 'ادامه'}
+              در حال ورود به سایت
             </button>
           </div>
         </section>

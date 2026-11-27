@@ -109,12 +109,6 @@
   font-size: 12px;
 }
 
-.otp-verification-embedded .otp-message {
-  right: 12px;
-  bottom: 12px;
-  left: 12px;
-}
-
 .otp-verification-embedded .otp-success-art {
   width: 240px;
   height: 240px;
@@ -135,12 +129,7 @@
 }
 
 .otp-verification-embedded .otp-success-actions {
-  bottom: 14px;
-}
-
-.otp-verification-embedded .otp-secure {
-  margin-bottom: 18px;
-  font-size: 14px;
+  bottom: 45px;
 }
 
 .otp-verification-embedded .otp-continue-button {
@@ -385,79 +374,6 @@
   opacity: 1;
 }
 
-.otp-message {
-  position: absolute;
-  z-index: 7;
-  right: 25px;
-  bottom: 29px;
-  left: 25px;
-  display: flex;
-  align-items: center;
-  gap: 13px;
-  padding: 12px 16px;
-  border: 1px solid #ffffff10;
-  border-radius: 25px;
-  background: linear-gradient(120deg, #262a33, #171c24);
-  box-shadow: 0 10px 35px #0005, inset 0 1px #ffffff08;
-  direction: ltr;
-  text-align: left;
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(28px);
-  transition: opacity 0.7s, transform 0.9s var(--otp-ease);
-}
-
-.otp-message.show {
-  opacity: 1;
-  pointer-events: auto;
-  transform: translateY(0);
-}
-
-.otp-message-icon {
-  display: grid;
-  width: 38px;
-  height: 38px;
-  flex-shrink: 0;
-  place-items: center;
-  border-radius: 12px;
-  background: linear-gradient(#e6f2ff, #aabaca);
-  color: #34465a;
-}
-
-.otp-message-copy {
-  flex: 1;
-  color: #c5c9d1;
-  font-size: 12px;
-  direction: rtl;
-  text-align: right;
-}
-
-.otp-message-label {
-  display: block;
-  margin-bottom: 5px;
-  color: #a2a8b5;
-  font: 600 9px Arial, sans-serif;
-  letter-spacing: 1.4px;
-}
-
-.otp-message-copy b {
-  color: #c5c9d1;
-  font-weight: 600;
-}
-
-.otp-fill-button {
-  padding: 8px 19px;
-  border: 0;
-  border-radius: 22px;
-  background: #e6ebf1;
-  color: #20242b;
-  font-size: 13px;
-}
-
-.otp-fill-button:disabled {
-  cursor: default;
-}
-
 .otp-footnote {
   margin: 24px 0 0;
   color: #626a74;
@@ -543,31 +459,12 @@
 .otp-success-actions {
   position: absolute;
   right: 0;
-  bottom: 27px;
+  bottom: 60px;
   left: 0;
   opacity: 0;
   pointer-events: none;
   transform: translateY(18px);
   transition: opacity 0.6s 0.3s, transform 0.8s 0.3s var(--otp-ease);
-}
-
-.otp-secure {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  margin-bottom: 21px;
-  color: #38bb9c;
-  font-size: 17px;
-}
-
-.otp-secure svg {
-  width: 20px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
 }
 
 .otp-continue-button {
@@ -591,6 +488,136 @@
 
 .otp-continue-button:active {
   transform: scale(0.98);
+}
+
+.otp-continue-button:disabled {
+  cursor: progress;
+  opacity: 1;
+}
+
+@media (min-width: 761px) {
+  .otp-verification-embedded .otp-panel {
+    padding: 28px 10px 14px;
+  }
+
+  .otp-verification-embedded .otp-subtitle {
+    font-size: 12px;
+  }
+
+  .otp-verification-embedded .otp-panel.success .otp-subtitle {
+    transform: translateY(18px);
+    color: #e0e4ea;
+    font-size: 15px;
+    font-weight: 700;
+  }
+
+  .otp-verification-embedded .otp-scene {
+    height: clamp(205px, 30vh, 275px);
+    transform: translateY(55px);
+  }
+
+  .otp-verification-embedded .otp-orbit {
+    width: 190px;
+    height: 190px;
+  }
+
+  .otp-verification-embedded .otp-digit {
+    width: 66px;
+    height: 70px;
+    margin: -35px 0 0 -33px;
+    border-radius: 18px;
+    font-size: 30px;
+  }
+
+  .otp-verification-embedded .otp-digit:nth-child(1) {
+    --otp-x: -136px;
+  }
+
+  .otp-verification-embedded .otp-digit:nth-child(2) {
+    --otp-x: -45px;
+  }
+
+  .otp-verification-embedded .otp-digit:nth-child(3) {
+    --otp-x: 45px;
+  }
+
+  .otp-verification-embedded .otp-digit:nth-child(4) {
+    --otp-x: 136px;
+  }
+
+  .otp-verification-embedded .otp-code-input {
+    width: 360px;
+    height: 94px;
+  }
+
+  .otp-verification-embedded .otp-resend-row {
+    bottom: 80px;
+    min-height: 32px;
+    gap: 8px;
+    font-size: 11px;
+  }
+
+  .otp-verification-embedded .otp-resend-row button {
+    min-width: 124px;
+    font-size: 11px;
+  }
+
+  .otp-verification-embedded .otp-status {
+    bottom: 116px;
+    font-size: 11px;
+  }
+
+  .otp-verification-embedded .otp-success-art {
+    width: 210px;
+    height: 210px;
+  }
+
+  .otp-verification-embedded .otp-panel.success .otp-success-art {
+    transform: translate(-50%, calc(-50% + 40px)) scale(1);
+  }
+
+  .otp-verification-embedded .otp-square-ring {
+    border-radius: 54px;
+  }
+
+  .otp-verification-embedded .otp-square-ring-inner {
+    inset: 32px;
+    border-radius: 38px;
+  }
+
+  .otp-verification-embedded .otp-check-box {
+    inset: 72px;
+    border-radius: 18px;
+  }
+
+  .otp-verification-embedded .otp-success-actions {
+    bottom: 40px;
+  }
+
+  .otp-verification-embedded .otp-continue-button {
+    padding: 8px 32px;
+    font-size: 14px;
+  }
+
+  .otp-verification-embedded .otp-panel.verifying .otp-digit:nth-child(1) {
+    --otp-x: -94px;
+    --otp-y: 0px;
+  }
+
+  .otp-verification-embedded .otp-panel.verifying .otp-digit:nth-child(2) {
+    --otp-x: 0px;
+    --otp-y: -94px;
+  }
+
+  .otp-verification-embedded .otp-panel.verifying .otp-digit:nth-child(3) {
+    --otp-x: 94px;
+    --otp-y: 0px;
+  }
+
+  .otp-verification-embedded .otp-panel.verifying .otp-digit:nth-child(4) {
+    --otp-x: 0px;
+    --otp-y: 94px;
+  }
 }
 
 .otp-panel.verifying .otp-orbit {
@@ -638,13 +665,6 @@
   --otp-y: 113px;
 }
 
-.otp-panel.verifying .otp-message,
-.otp-panel.success .otp-message {
-  opacity: 0;
-  pointer-events: none;
-  transform: translateY(100px);
-}
-
 .otp-panel.verifying .otp-code-input,
 .otp-panel.success .otp-code-input {
   pointer-events: none;
@@ -675,7 +695,7 @@
   animation-delay: var(--particle-delay);
 }
 
-.otp-panel.success .otp-success-actions {
+.otp-panel.success.login-status-visible .otp-success-actions {
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0);
@@ -806,11 +826,11 @@
   }
 
   .otp-digit {
-    width: 64px;
-    height: 72px;
-    margin: -36px 0 0 -32px;
-    border-radius: 20px;
-    font-size: 31px;
+    width: 49px;
+    height: 57px;
+    margin: -28.5px 0 0 -24.5px;
+    border-radius: 15px;
+    font-size: 25px;
   }
 
   .otp-digit:nth-child(1) {
@@ -869,29 +889,9 @@
     font-size: 13px;
   }
 
-  .otp-message {
-    right: 17px;
-    bottom: 23px;
-    left: 17px;
-    gap: 9px;
-    padding: 11px;
-  }
-
-  .otp-message-copy {
-    font-size: 11px;
-  }
-
-  .otp-fill-button {
-    padding: 8px 14px;
-  }
-
   .otp-footnote {
     margin-top: 19px;
     font-size: 11px;
-  }
-
-  .otp-secure {
-    font-size: 16px;
   }
 
   .otp-status {
@@ -931,36 +931,10 @@
     font-size: 10px;
   }
 
-  .otp-verification-embedded .otp-message {
-    right: 8px;
-    bottom: 10px;
-    left: 8px;
-    padding: 9px;
-  }
-
-  .otp-verification-embedded .otp-message-icon {
-    width: 32px;
-    height: 32px;
-  }
-
-  .otp-verification-embedded .otp-message-copy {
-    font-size: 10px;
-  }
-
-  .otp-verification-embedded .otp-fill-button {
-    padding: 7px 11px;
-    font-size: 10px;
-  }
-
   .otp-verification-embedded .otp-success-actions {
     right: 8px;
-    bottom: 10px;
+    bottom: 40px;
     left: 8px;
-  }
-
-  .otp-verification-embedded .otp-secure {
-    margin-bottom: 16px;
-    font-size: 12px;
   }
 
   .otp-verification-embedded .otp-continue-button {
