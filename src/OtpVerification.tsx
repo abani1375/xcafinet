@@ -207,12 +207,16 @@ export default function OtpVerification({ contact, onContinue, embedded = false 
   }, [phase])
 
   const maskedContact = maskContact(contact)
+  const confirmationMessage = contact.includes('@')
+    ? 'ایمیل شما تأیید شد.'
+    : 'شمارهٔ موبایل شما تأیید شد.'
   const panelClasses = [
     'otp-panel',
     phase === 'verifying' ? 'verifying' : '',
     phase === 'success' ? 'success' : '',
     phase === 'verifying' && invalidCode ? 'invalid-code' : '',
     hasError ? 'error' : '',
+    status ? 'has-status' : '',
     continued ? 'continued' : '',
   ].filter(Boolean).join(' ')
 
@@ -220,14 +224,13 @@ export default function OtpVerification({ contact, onContinue, embedded = false 
     <div className={`otp-verification-page${embedded ? ' otp-verification-embedded' : ''}`} dir="rtl">
       <div className="otp-verification-content">
         <section
-          aria-label={phase === 'success' ? 'با موفقیت تأیید شد' : 'تأیید کد یک‌بارمصرف'}
+          aria-label="تأیید کد یک‌بارمصرف"
           className={panelClasses}
         >
           <div className="otp-handle" aria-hidden="true" />
-          {phase === 'success' && <h2 className="otp-heading">با موفقیت تأیید شد</h2>}
           <p className="otp-subtitle" id="otp-subtitle">
             {phase === 'success' ? (
-              'شمارهٔ موبایل شما تأیید شد.'
+              confirmationMessage
             ) : (
               <>
                 کد ۴ رقمی ارسال‌شده به <bdi className="otp-phone" dir="ltr">{maskedContact}</bdi> را وارد کن.

@@ -7130,6 +7130,9 @@ td:last-child {
 }
 
 .login-form-panel-otp .login-contact-content {
+  position: absolute;
+  inset: 0;
+  flex: none;
   opacity: 0;
   filter: blur(7px);
   pointer-events: none;
@@ -7370,6 +7373,12 @@ td:last-child {
     border-radius: 0;
   }
 
+  .login-card-otp {
+    grid-template-rows:
+      calc(var(--login-mobile-arc-center) + var(--login-mobile-arc-radius))
+      minmax(0, calc(100dvh - var(--login-mobile-arc-center) - var(--login-mobile-arc-radius) - 2px));
+  }
+
   .login-toolbar {
     display: none;
   }
@@ -7403,6 +7412,10 @@ td:last-child {
     background: var(--nm-surface-background);
     -webkit-mask-image: radial-gradient(circle var(--login-mobile-arc-radius) at 50% 0, transparent calc(var(--login-mobile-arc-radius) - 1px), #000 var(--login-mobile-arc-radius));
     mask-image: radial-gradient(circle var(--login-mobile-arc-radius) at 50% 0, transparent calc(var(--login-mobile-arc-radius) - 1px), #000 var(--login-mobile-arc-radius));
+  }
+
+  .login-form-panel-otp {
+    min-height: 0;
   }
 
   .login-mobile-title {
@@ -7556,6 +7569,80 @@ td:last-child {
 
   .login-showcase-logo::after {
     animation: login-showcase-logo-shine 4.2s ease-in-out infinite;
+  }
+}
+
+@media (max-width: 420px) and (max-height: 700px) {
+  .login-card-otp {
+    --login-mobile-arc-center: clamp(70px, 12vh, 88px);
+    --login-mobile-arc-radius: clamp(140px, 26vh, 180px);
+  }
+}
+
+@media (min-width: 421px) and (max-width: 600px) {
+  .login-page-otp {
+    position: fixed;
+    z-index: 10000;
+    inset: 0;
+    width: 100%;
+    min-height: 100dvh;
+    margin: 0;
+  }
+
+  .login-page-otp .login-toolbar {
+    display: none;
+  }
+
+  .login-page-otp .login-card {
+    --login-mobile-arc-center: 110px;
+    --login-mobile-arc-radius: 238px;
+    height: 100dvh;
+    min-height: 100dvh;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows:
+      calc(var(--login-mobile-arc-center) + var(--login-mobile-arc-radius))
+      minmax(0, calc(100dvh - var(--login-mobile-arc-center) - var(--login-mobile-arc-radius)));
+    border-radius: 0;
+  }
+
+  .login-page-otp .login-showcase {
+    z-index: 2;
+    min-height: calc(var(--login-mobile-arc-center) + var(--login-mobile-arc-radius));
+    padding: 19px;
+    -webkit-mask-image:
+      linear-gradient(to bottom, #000 0, #000 var(--login-mobile-arc-center), transparent var(--login-mobile-arc-center)),
+      radial-gradient(circle var(--login-mobile-arc-radius) at 50% var(--login-mobile-arc-center), #000 calc(var(--login-mobile-arc-radius) - 1px), transparent var(--login-mobile-arc-radius));
+    -webkit-mask-composite: source-over;
+    mask-image:
+      linear-gradient(to bottom, #000 0, #000 var(--login-mobile-arc-center), transparent var(--login-mobile-arc-center)),
+      radial-gradient(circle var(--login-mobile-arc-radius) at 50% var(--login-mobile-arc-center), #000 calc(var(--login-mobile-arc-radius) - 1px), transparent var(--login-mobile-arc-radius));
+    mask-composite: add;
+  }
+
+  .login-page-otp .login-showcase-copy,
+  .login-page-otp .login-showcase-services,
+  .login-page-otp .login-showcase-wave {
+    display: none;
+  }
+
+  .login-page-otp .login-form-panel {
+    z-index: 1;
+    margin-top: calc(0px - var(--login-mobile-arc-radius));
+    padding: 250px 20px 25px;
+    background: var(--nm-surface-background);
+    -webkit-mask-image: radial-gradient(circle var(--login-mobile-arc-radius) at 50% 0, transparent calc(var(--login-mobile-arc-radius) - 1px), #000 var(--login-mobile-arc-radius));
+    mask-image: radial-gradient(circle var(--login-mobile-arc-radius) at 50% 0, transparent calc(var(--login-mobile-arc-radius) - 1px), #000 var(--login-mobile-arc-radius));
+  }
+
+  .login-page-otp .login-form-panel-otp {
+    min-height: 0;
+  }
+}
+
+@media (min-width: 421px) and (max-width: 600px) and (max-height: 700px) {
+  .login-page-otp .login-card {
+    --login-mobile-arc-center: clamp(70px, 12vh, 88px);
+    --login-mobile-arc-radius: clamp(140px, 26vh, 180px);
   }
 }
 

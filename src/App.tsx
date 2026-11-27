@@ -674,7 +674,7 @@ function LoginPage({ theme, onToggleTheme, notice, canReturn, onBack, onLogin }:
   }
 
   return (
-    <main className="login-page">
+    <main className={`login-page${step === 'otp' ? ' login-page-otp' : ''}`}>
       <div className="login-toolbar">
         <div className="login-toolbar-note"><span /> ورود امن به فضای کاربری</div>
         <div className="login-toolbar-actions">
@@ -682,7 +682,7 @@ function LoginPage({ theme, onToggleTheme, notice, canReturn, onBack, onLogin }:
           <ThemeToggle theme={theme} onToggle={onToggleTheme} />
         </div>
       </div>
-      <section className="login-card" aria-labelledby="login-title">
+      <section className={`login-card${step === 'otp' ? ' login-card-otp' : ''}`} aria-labelledby="login-title">
         <aside className="login-showcase" aria-hidden="true">
           <div className="login-showcase-glow" />
           <div className="login-showcase-emblem">
