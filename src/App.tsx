@@ -673,8 +673,6 @@ function LoginPage({ theme, onToggleTheme, notice, canReturn, onBack, onLogin }:
     setStep('otp')
   }
 
-  if (step === 'otp') return <OtpVerification contact={contact} onContinue={onLogin} />
-
   return (
     <main className="login-page">
       <div className="login-toolbar">
@@ -708,7 +706,12 @@ function LoginPage({ theme, onToggleTheme, notice, canReturn, onBack, onLogin }:
             </svg>
           </div>
         </aside>
-        <div className="login-form-panel">
+        <div className={`login-form-panel${step === 'otp' ? ' login-form-panel-otp' : ''}`}>
+          <div
+            aria-hidden={step !== 'contact'}
+            className="login-contact-content"
+            inert={step !== 'contact'}
+          >
           <div className="login-mobile-brand">
             <img className="brand-mark" src="/kafinet-x-logo.png" alt="" />
             <strong>کافی‌نت ایکس<span>.</span></strong>
@@ -743,6 +746,12 @@ function LoginPage({ theme, onToggleTheme, notice, canReturn, onBack, onLogin }:
           </div>
           <p className="login-demo-note">ارسال و بررسی واقعی کد پس از اتصال سرویس پیامک و ایمیل فعال می‌شود؛ این صفحه فعلاً نمایشی است.</p>
           <div className="login-form-footer"><span><Icon name="check" size={14} /> تجربه‌ای ساده و یکپارچه</span><span>کافی‌نت ایکس</span></div>
+          </div>
+          {step === 'otp' && (
+            <div className="login-otp-content">
+              <OtpVerification contact={contact} embedded onContinue={onLogin} />
+            </div>
+          )}
         </div>
       </section>
     </main>

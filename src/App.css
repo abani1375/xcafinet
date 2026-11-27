@@ -7104,11 +7104,55 @@ td:last-child {
 }
 
 .login-form-panel {
+  position: relative;
   min-width: 0;
   display: flex;
   flex-direction: column;
   justify-content: center;
   padding: 56px clamp(34px, 6vw, 74px);
+}
+
+.login-contact-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  transition:
+    opacity 450ms ease,
+    filter 500ms ease,
+    transform 600ms cubic-bezier(.22, 1, .36, 1);
+}
+
+.login-form-panel-otp {
+  overflow: hidden;
+}
+
+.login-form-panel-otp .login-contact-content {
+  opacity: 0;
+  filter: blur(7px);
+  pointer-events: none;
+  transform: translateY(-18px) scale(.98);
+}
+
+.login-otp-content {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  opacity: 0;
+  animation: login-otp-reveal 850ms 120ms cubic-bezier(.22, 1, .36, 1) forwards;
+}
+
+@keyframes login-otp-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(28px) scale(.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .login-mobile-brand {

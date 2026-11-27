@@ -52,20 +52,105 @@
   text-align: center;
 }
 
-.otp-page-title {
-  margin: 0 0 24px;
-  color: #e1e5eb;
-  font-size: clamp(24px, 4vw, 40px);
-  font-weight: 650;
-  letter-spacing: -1.2px;
+.otp-verification-embedded {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: block;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+  background: transparent;
 }
 
-.otp-version {
-  margin-right: 7px;
-  color: #f3f4f7;
-  font-family: Arial, sans-serif;
-  font-size: 0.52em;
-  letter-spacing: -0.4px;
+.otp-verification-embedded .otp-verification-content {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+}
+
+.otp-verification-embedded .otp-panel {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 38px 12px 20px;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.otp-verification-embedded .otp-handle {
+  display: none;
+}
+
+.otp-verification-embedded .otp-heading {
+  margin-bottom: 8px;
+  font-size: clamp(20px, 2.4vw, 26px);
+}
+
+.otp-verification-embedded .otp-subtitle {
+  min-height: 0;
+  font-size: 13px;
+}
+
+.otp-verification-embedded .otp-scene {
+  height: clamp(250px, 40vh, 360px);
+  margin-top: 0;
+}
+
+.otp-verification-embedded .otp-resend-row {
+  bottom: 94px;
+  font-size: 12px;
+}
+
+.otp-verification-embedded .otp-resend-row button {
+  font-size: 12px;
+}
+
+.otp-verification-embedded .otp-status {
+  bottom: 140px;
+  font-size: 12px;
+}
+
+.otp-verification-embedded .otp-message {
+  right: 12px;
+  bottom: 12px;
+  left: 12px;
+}
+
+.otp-verification-embedded .otp-success-art {
+  width: 240px;
+  height: 240px;
+}
+
+.otp-verification-embedded .otp-square-ring {
+  border-radius: 65px;
+}
+
+.otp-verification-embedded .otp-square-ring-inner {
+  inset: 38px;
+  border-radius: 46px;
+}
+
+.otp-verification-embedded .otp-check-box {
+  inset: 82px;
+  border-radius: 22px;
+}
+
+.otp-verification-embedded .otp-success-actions {
+  bottom: 14px;
+}
+
+.otp-verification-embedded .otp-secure {
+  margin-bottom: 18px;
+  font-size: 14px;
+}
+
+.otp-verification-embedded .otp-continue-button {
+  padding: 10px 40px;
+  font-size: 15px;
 }
 
 .otp-panel {
@@ -723,11 +808,6 @@
     padding: 24px 14px;
   }
 
-  .otp-page-title {
-    margin-bottom: 20px;
-    font-size: 29px;
-  }
-
   .otp-panel {
     min-height: 640px;
     padding: 65px 19px 28px;
@@ -838,5 +918,78 @@
   .otp-status {
     bottom: 170px;
     font-size: 12px;
+  }
+
+  .otp-verification-embedded .otp-panel {
+    padding: 250px 8px 18px;
+  }
+
+  .otp-verification-embedded .otp-heading {
+    font-size: 22px;
+  }
+
+  .otp-verification-embedded .otp-subtitle {
+    font-size: 11px;
+  }
+
+  .otp-verification-embedded .otp-scene {
+    height: clamp(225px, 32vh, 285px);
+  }
+
+  .otp-verification-embedded .otp-resend-row {
+    right: 6px;
+    bottom: 86px;
+    left: 6px;
+    gap: 5px;
+    font-size: 10px;
+  }
+
+  .otp-verification-embedded .otp-resend-row button {
+    min-width: 130px;
+    font-size: 10px;
+  }
+
+  .otp-verification-embedded .otp-status {
+    right: 8px;
+    bottom: 125px;
+    left: 8px;
+    font-size: 10px;
+  }
+
+  .otp-verification-embedded .otp-message {
+    right: 8px;
+    bottom: 10px;
+    left: 8px;
+    padding: 9px;
+  }
+
+  .otp-verification-embedded .otp-message-icon {
+    width: 32px;
+    height: 32px;
+  }
+
+  .otp-verification-embedded .otp-message-copy {
+    font-size: 10px;
+  }
+
+  .otp-verification-embedded .otp-fill-button {
+    padding: 7px 11px;
+    font-size: 10px;
+  }
+
+  .otp-verification-embedded .otp-success-actions {
+    right: 8px;
+    bottom: 10px;
+    left: 8px;
+  }
+
+  .otp-verification-embedded .otp-secure {
+    margin-bottom: 16px;
+    font-size: 12px;
+  }
+
+  .otp-verification-embedded .otp-continue-button {
+    padding: 8px 32px;
+    font-size: 13px;
   }
 }

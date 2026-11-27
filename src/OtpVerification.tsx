@@ -4,6 +4,7 @@ import './OtpVerification.css'
 type OtpVerificationProps = {
   contact: string
   onContinue: () => void
+  embedded?: boolean
 }
 
 type OtpPhase = 'input' | 'verifying' | 'success'
@@ -75,7 +76,7 @@ function formatCountdown(seconds: number) {
   return toFarsiDigits(String(seconds))
 }
 
-export default function OtpVerification({ contact, onContinue }: OtpVerificationProps) {
+export default function OtpVerification({ contact, onContinue, embedded = false }: OtpVerificationProps) {
   const [phase, setPhase] = useState<OtpPhase>('input')
   const [code, setCode] = useState('')
   const [remaining, setRemaining] = useState(25)
@@ -216,16 +217,14 @@ export default function OtpVerification({ contact, onContinue }: OtpVerification
   ].filter(Boolean).join(' ')
 
   return (
-    <main className="otp-verification-page" dir="rtl">
+    <div className={`otp-verification-page${embedded ? ' otp-verification-embedded' : ''}`} dir="rtl">
       <div className="otp-verification-content">
-        <h1 className="otp-page-title">
-          تأیید کد یک‌بارمصرف <span className="otp-version">v3</span>
-        </h1>
-        <section className={panelClasses} aria-labelledby="otp-heading">
+        <section
+          aria-label={phase === 'success' ? 'با موفقیت تأیید شد' : 'تأیید کد یک‌بارمصرف'}
+          className={panelClasses}
+        >
           <div className="otp-handle" aria-hidden="true" />
-          <h2 className="otp-heading" id="otp-heading">
-            {phase === 'success' ? 'با موفقیت تأیید شد' : 'شماره‌ات را تأیید کن'}
-          </h2>
+          {phase === 'success' && <h2 className="otp-heading">با موفقیت تأیید شد</h2>}
           <p className="otp-subtitle" id="otp-subtitle">
             {phase === 'success' ? (
               'شمارهٔ موبایل شما تأیید شد.'
@@ -357,10 +356,7 @@ export default function OtpVerification({ contact, onContinue }: OtpVerification
           </div>
         </section>
 
-        <p className="otp-footnote">
-          کد را بنویس، جای‌گذاری کن یا از پیامک بردار — کد آزمایشی <b>{toFarsiDigits(DEMO_CODE)}</b> است.
-        </p>
       </div>
-    </main>
+    </div>
   )
 }
