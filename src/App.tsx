@@ -21,15 +21,100 @@ const siteStyleOptions = [
   { id: 'colored', label: 'رنگی', description: 'سایه‌ها و سطح‌ها با رنگ تأکیدی هماهنگ‌اند.' },
 ] as const
 type SiteStyle = typeof siteStyleOptions[number]['id']
-type AdminSettingsSection = 'profile' | 'catalog' | 'events' | 'analytics' | 'seo' | 'appearance'
+type AdminSettingsSection = 'profile' | 'catalog' | 'events' | 'print' | 'analytics' | 'seo' | 'security' | 'payment' | 'chat' | 'appearance'
 type AppearanceTab = 'site' | 'header'
 type AppearanceStyleGroup = 'simple' | 'neumorphic'
+type ColleagueChatSettings = { enabled: boolean; maxFileSizeMb: 1 | 2; retentionHours: 12 | 24 }
+type PrintMode = 'blackAndWhite' | 'color'
+const printPaperTypes = [
+  { id: 'a3', label: 'A3', dimensions: '۲۹٫۷ × ۴۲ سانتی‌متر' },
+  { id: 'a4', label: 'A4', dimensions: '۲۱ × ۲۹٫۷ سانتی‌متر' },
+  { id: 'a5', label: 'A5', dimensions: '۱۴٫۸ × ۲۱ سانتی‌متر' },
+] as const
+type PrintPaperId = typeof printPaperTypes[number]['id']
+type PrintTermsSection = { title: string; items: string[]; note?: string }
+const printTermsSections: PrintTermsSection[] = [
+  {
+    title: 'تعریف کاربر',
+    items: ['کاربر یا مشتری به شخص حقیقی یا حقوقی گفته می‌شود که با اطلاعات خود در سایت کافی‌نت کشوری ثبت‌نام کرده و اقدام به ثبت سفارش یکی از خدمات یا محصولات سایت می‌نماید.'],
+  },
+  {
+    title: 'قوانین پرداخت',
+    items: [
+      'سفارش‌ها تنها پس از پرداخت کامل هزینه و تأیید کاربر قابل پردازش هستند.',
+      'قیمت نهایی سفارش، مبلغی است که در زمان ثبت و پرداخت سفارش در فاکتور درج شده است.',
+      'تمامی قیمت‌های درج‌شده در سایت به ریال بوده و ممکن است بدون اطلاع قبلی برای سفارش‌های جدید تغییر کنند.',
+      'پرداخت‌ها از طریق درگاه‌های امن و معتبر انجام می‌شود.',
+    ],
+  },
+  {
+    title: 'مشخصات فنی فایل‌های طراحی',
+    items: [
+      'فرمت‌های مجاز: PNG، JPG و PDF.',
+      'کیفیت فایل: حداقل ۳۰۰ DPI.',
+      'حالت رنگی: CMYK.',
+      'رعایت حاشیهٔ برش (Bleed): حداقل ۳ میلی‌متر.',
+    ],
+    note: 'ارسال فایل با کیفیت پایین، حالت رنگی RGB یا عدم رعایت حاشیهٔ برش ممکن است باعث افت کیفیت چاپ شود و کافی‌نت کشوری مسئولیتی در قبال مشکلات ناشی از فایل‌های ناقص یا غیراستاندارد ندارد.',
+  },
+  {
+    title: 'تفاوت رنگ در چاپ',
+    items: [
+      'با توجه به تفاوت نمایش رنگ در مانیتورها و دستگاه‌های مختلف، ممکن است رنگ محصول نهایی چاپ‌شده با تصویر نمایش‌داده‌شده در سایت اختلاف جزئی داشته باشد.',
+      'در چاپ‌های دیجیتال، ثبات رنگ کامل وجود ندارد و اختلاف رنگ تا ۱۰ الی ۱۵ درصد نسبت به فایل دیجیتال طبیعی و قابل قبول است و جزو خطای تولید محسوب نمی‌شود.',
+      'در چاپ‌های افست که در تیراژهای عمومی انجام می‌شوند، به دلیل تغییر مواد اولیه مانند کاغذ، مرکب و روکش‌ها، ممکن است اختلاف رنگ تا ۳۰ درصد بین چاپ‌های مختلف وجود داشته باشد.',
+      'در تمامی فایل‌های چاپی، امکان ۷ الی ۱۰ درصد کسری یا باطله وجود دارد.',
+    ],
+  },
+  {
+    title: 'قوانین لغو سفارش',
+    items: [
+      'بعد از ثبت سفارش و اعلام زمان چاپ و تأیید کاربر، به مدت ۱ ساعت دکمهٔ لغو سفارش فعال می‌شود و بعد از سپری‌شدن زمان تعیین‌شده امکان لغو سفارش وجود نخواهد داشت.',
+      'پس از آغاز فرآیند چاپ یا تولید، امکان لغو سفارش وجود نخواهد داشت؛ مگر در مواردی که از سمت سایت کافی‌نت کشوری امکان لغو سفارش وجود داشته باشد.',
+      'در شرایط خاص مانند بروز خطای سیستمی، مشکلات فنی یا اتمام موجودی، کافی‌نت کشوری این حق را دارد که سفارش را لغو کرده و مبلغ پرداخت‌شده را به مشتری بازگرداند.',
+    ],
+  },
+  {
+    title: 'قوانین ارسال و تحویل',
+    items: [
+      'آماده‌سازی سفارش‌ها بستگی به چاپخانه دارد. بعد از ثبت سفارش، زمان آماده‌سازی در اولین فرصت در قسمت سفارشات به کاربر اعلام می‌شود و بعد از تأیید کاربر، سفارش در دستور چاپ قرار می‌گیرد.',
+      'زمان تحویل نهایی به عملکرد شرکت‌های حمل‌ونقل وابسته است و ممکن است در برخی مناسبت‌ها، شرایط جوی یا تعطیلات رسمی تغییر کند.',
+      'هزینهٔ ارسال بر عهدهٔ مشتری است و پرداخت آن توسط مشتری انجام می‌شود.',
+    ],
+  },
+  {
+    title: 'کیفیت محصولات و گارانتی',
+    items: [
+      'تمامی محصولات پیش از ارسال کنترل می‌شوند.',
+      'کافی‌نت کشوری مسئولیت چاپ بدون خطاهای فنی مانند لکه، تاخوردگی و سایر نقص‌های واضح را بر عهده می‌گیرد.',
+      'در صورت وجود ایراد از سمت کافی‌نت کشوری، سفارش چاپ مجدد شده یا مبلغ به مشتری بازگردانده می‌شود.',
+    ],
+  },
+  {
+    title: 'مسئولیت قانونی محتوای سفارشات',
+    items: [
+      'کلیهٔ سفارشات ارسالی و چاپی به‌صورت اینترنتی می‌بایست طبق قوانین وزارت فرهنگ و ارشاد اسلامی باشد و رعایت این امر الزامی است.',
+      'مسئولیت حقوقی و قانونی استفاده از اوراق چاپی سفارش‌داده‌شده بر عهدهٔ کاربر است.',
+      'در صورت سفارش هر نوع محتوای چاپی که طبق قوانین یا عرف جامعه غیرمجاز باشد، سفارش لغو خواهد شد و در صورت چاپ‌شدن، محصول معدوم شده و هیچ مبلغی به کاربر عودت نخواهد شد.',
+      'کاربر موظف است برای سفارش‌هایی که نیاز به مجوزهای قانونی از مراجع ذی‌صلاح دارند، مستندات لازم را ارائه دهد.',
+    ],
+  },
+]
+type PrintPaperSetting = {
+  oneSidedTextPrice: number
+  twoSidedTextPrice: number
+  oneSidedImagePrice: number
+  twoSidedImagePrice: number
+}
+type LegacyPrintPaperSetting = { oneSidedPrice: number; twoSidedPrice: number; imagePrintPrice: number }
+type PrintSettings = Record<PrintMode, Record<PrintPaperId, PrintPaperSetting>>
 type CatalogCategory = { id: string; name: string; description: string; icon?: string }
 type CatalogService = { id: string; categoryId: string; name: string; description: string; price: number; icon?: string }
 type ServiceCatalogData = { categories: CatalogCategory[]; services: CatalogService[] }
 type CartItem = { serviceId: string; categoryName: string; name: string; description: string; price: number; quantity: number }
 type DemoAttachment = { name: string; type: string; size: number; dataUrl?: string }
 type DemoMessage = { id: string; senderRole: 'user' | 'operator'; senderName: string; text: string; createdAt: string; attachment?: DemoAttachment }
+type ColleagueChatMessage = { id: string; senderRole: 'admin' | 'operator'; senderName: string; text: string; createdAt: string; attachment?: DemoAttachment }
 type DemoAdditionalService = { id: string; item: CartItem; status: 'pending' | 'processing' | 'paid' | 'failed'; createdAt: string }
 type DemoOrder = {
   id: string
@@ -60,6 +145,12 @@ const legacyCartStorageKey = 'xcafinet-cart'
 const eventsStorageKey = 'xcafinet-events'
 const adminUsersStorageKey = 'xcafinet-admin-users'
 const adminOperatorsStorageKey = 'xcafinet-admin-operators'
+const adminManagersStorageKey = 'xcafinet-admin-managers'
+const colleagueChatMessagesStorageKey = 'xcafinet-colleague-chat-messages'
+const managerPrivateChatMessagesStorageKey = 'xcafinet-manager-private-chat-messages'
+const colleagueChatSettingsStorageKey = 'xcafinet-colleague-chat-settings'
+const printSettingsStorageKey = 'xcafinet-print-settings'
+const colleagueChatCleanupEvent = 'xcafinet-colleague-chat-cleanup'
 const demoOrdersStorageKey = 'xcafinet-demo-orders'
 const demoUserId = 'demo-user-negar'
 const demoUserName = 'نگار محمدی'
@@ -68,6 +159,7 @@ const demoWalletInitialBalance = 24_800_000
 const demoAdminWalletBalance = 128_400_000
 const demoOperators = [{ id: 'demo-operator-sara', fullName: 'سارا احمدی', isAvailable: true }]
 const maxDemoDocumentSize = 2 * 1024 * 1024
+const defaultColleagueChatSettings: ColleagueChatSettings = { enabled: true, maxFileSizeMb: 2, retentionHours: 24 }
 const profileImagesStorageKey = 'xcafinet-profile-images'
 const maxBirthDate = new Date()
 const themeStorageKey = 'xcafinet-theme'
@@ -278,6 +370,53 @@ function formatPersianDateInput(value: string): string {
   }).format(dateFromIso(value))
 }
 
+function parseInternetUtcTime(value: unknown): number {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error('Invalid time API response.')
+  }
+
+  const data = value as Record<string, unknown>
+  const isIntegerInRange = (candidate: unknown, min: number, max: number): candidate is number =>
+    typeof candidate === 'number' && Number.isInteger(candidate) && candidate >= min && candidate <= max
+  const year = data.year
+  const month = data.month
+  const day = data.day
+  const hour = data.hour
+  const minute = data.minute
+  const second = data.seconds
+  const millisecond = data.milliSeconds
+
+  if (
+    data.timeZone !== 'UTC'
+    || !isIntegerInRange(year, 1000, 9999)
+    || !isIntegerInRange(month, 1, 12)
+    || !isIntegerInRange(day, 1, 31)
+    || !isIntegerInRange(hour, 0, 23)
+    || !isIntegerInRange(minute, 0, 59)
+    || !isIntegerInRange(second, 0, 59)
+    || !isIntegerInRange(millisecond, 0, 999)
+  ) {
+    throw new Error('Invalid UTC fields in time API response.')
+  }
+
+  const timestamp = Date.UTC(year, month - 1, day, hour, minute, second, millisecond)
+  const parsedDate = new Date(timestamp)
+  if (
+    !Number.isFinite(timestamp)
+    || parsedDate.getUTCFullYear() !== year
+    || parsedDate.getUTCMonth() !== month - 1
+    || parsedDate.getUTCDate() !== day
+    || parsedDate.getUTCHours() !== hour
+    || parsedDate.getUTCMinutes() !== minute
+    || parsedDate.getUTCSeconds() !== second
+    || parsedDate.getUTCMilliseconds() !== millisecond
+  ) {
+    throw new Error('Invalid UTC date in time API response.')
+  }
+
+  return timestamp
+}
+
 function daysUntil(value: string): number {
   const [year, month, day] = value.split('-').map(Number)
   const today = new Date()
@@ -422,6 +561,179 @@ function loadDemoOrders(): DemoOrder[] {
   }
 
   return []
+}
+
+function isColleagueChatMessage(value: unknown): value is ColleagueChatMessage {
+  return typeof value === 'object'
+    && value !== null
+    && 'id' in value
+    && 'senderRole' in value
+    && 'senderName' in value
+    && 'text' in value
+    && 'createdAt' in value
+    && typeof value.id === 'string'
+    && (value.senderRole === 'admin' || value.senderRole === 'operator')
+    && typeof value.senderName === 'string'
+    && typeof value.text === 'string'
+    && (value.text.trim().length > 0 || ('attachment' in value && isDemoAttachment(value.attachment) && typeof value.attachment.dataUrl === 'string'))
+    && typeof value.createdAt === 'string'
+    && !Number.isNaN(Date.parse(value.createdAt))
+    && (!('attachment' in value) || value.attachment === undefined || (isDemoAttachment(value.attachment) && typeof value.attachment.dataUrl === 'string'))
+}
+
+function loadColleagueChatMessages(storageKey = colleagueChatMessagesStorageKey): ColleagueChatMessage[] {
+  try {
+    const stored = localStorage.getItem(storageKey)
+    if (stored === null) return []
+
+    const parsed: unknown = JSON.parse(stored)
+    if (Array.isArray(parsed) && parsed.every(isColleagueChatMessage)) return parsed
+
+    console.error('Stored colleague chat messages have an invalid format; starting with an empty list.')
+  } catch (error) {
+    console.error('Could not load the saved colleague chat messages.', error)
+  }
+
+  return []
+}
+
+function isColleagueChatSettings(value: unknown): value is ColleagueChatSettings {
+  return typeof value === 'object'
+    && value !== null
+    && 'enabled' in value
+    && 'maxFileSizeMb' in value
+    && 'retentionHours' in value
+    && typeof value.enabled === 'boolean'
+    && (value.maxFileSizeMb === 1 || value.maxFileSizeMb === 2)
+    && (value.retentionHours === 12 || value.retentionHours === 24)
+}
+
+function loadColleagueChatSettings(): ColleagueChatSettings {
+  try {
+    const stored = localStorage.getItem(colleagueChatSettingsStorageKey)
+    if (stored === null) return defaultColleagueChatSettings
+
+    const parsed: unknown = JSON.parse(stored)
+    if (isColleagueChatSettings(parsed)) return parsed
+
+    console.error('Stored colleague chat settings have an invalid format; using the defaults.')
+  } catch (error) {
+    console.error('Could not load the saved colleague chat settings.', error)
+  }
+
+  return defaultColleagueChatSettings
+}
+
+function createEmptyPrintPaperSetting(): PrintPaperSetting {
+  return { oneSidedTextPrice: 0, twoSidedTextPrice: 0, oneSidedImagePrice: 0, twoSidedImagePrice: 0 }
+}
+
+function createDefaultPrintSettings(): PrintSettings {
+  const papers = {
+    a3: createEmptyPrintPaperSetting(),
+    a4: createEmptyPrintPaperSetting(),
+    a5: createEmptyPrintPaperSetting(),
+  }
+  return {
+    blackAndWhite: { ...papers },
+    color: {
+      a3: createEmptyPrintPaperSetting(),
+      a4: createEmptyPrintPaperSetting(),
+      a5: createEmptyPrintPaperSetting(),
+    },
+  }
+}
+
+function isPrintPaperSetting(value: unknown): value is PrintPaperSetting {
+  return typeof value === 'object'
+    && value !== null
+    && 'oneSidedTextPrice' in value
+    && 'twoSidedTextPrice' in value
+    && 'oneSidedImagePrice' in value
+    && 'twoSidedImagePrice' in value
+    && typeof value.oneSidedTextPrice === 'number'
+    && Number.isSafeInteger(value.oneSidedTextPrice)
+    && value.oneSidedTextPrice >= 0
+    && typeof value.twoSidedTextPrice === 'number'
+    && Number.isSafeInteger(value.twoSidedTextPrice)
+    && value.twoSidedTextPrice >= 0
+    && typeof value.oneSidedImagePrice === 'number'
+    && Number.isSafeInteger(value.oneSidedImagePrice)
+    && value.oneSidedImagePrice >= 0
+    && typeof value.twoSidedImagePrice === 'number'
+    && Number.isSafeInteger(value.twoSidedImagePrice)
+    && value.twoSidedImagePrice >= 0
+}
+
+function isLegacyPrintPaperSetting(value: unknown): value is LegacyPrintPaperSetting {
+  return typeof value === 'object'
+    && value !== null
+    && 'oneSidedPrice' in value
+    && 'twoSidedPrice' in value
+    && 'imagePrintPrice' in value
+    && [value.oneSidedPrice, value.twoSidedPrice, value.imagePrintPrice]
+      .every((price) => typeof price === 'number' && Number.isSafeInteger(price) && price >= 0)
+}
+
+function isPrintSettings(value: unknown): value is PrintSettings {
+  if (typeof value !== 'object' || value === null || !('blackAndWhite' in value) || !('color' in value)) return false
+
+  const isPrintModeSettings = (modeSettings: unknown): modeSettings is Record<PrintPaperId, PrintPaperSetting> => {
+    if (typeof modeSettings !== 'object' || modeSettings === null || Array.isArray(modeSettings)) return false
+    return printPaperTypes.every(({ id }) => {
+      const paper = Object.getOwnPropertyDescriptor(modeSettings, id)?.value
+      return isPrintPaperSetting(paper)
+    })
+  }
+
+  return isPrintModeSettings(value.blackAndWhite) && isPrintModeSettings(value.color)
+}
+
+function migrateLegacyPrintSettings(value: unknown): PrintSettings | null {
+  if (typeof value !== 'object' || value === null || !('blackAndWhite' in value) || !('color' in value)) return null
+
+  const migrateMode = (modeSettings: unknown): Record<PrintPaperId, PrintPaperSetting> | null => {
+    if (typeof modeSettings !== 'object' || modeSettings === null || Array.isArray(modeSettings)) return null
+    const migrated = createDefaultPrintSettings().blackAndWhite
+    for (const { id } of printPaperTypes) {
+      const legacyPaper = Object.getOwnPropertyDescriptor(modeSettings, id)?.value
+      if (!isLegacyPrintPaperSetting(legacyPaper)) return null
+      migrated[id] = {
+        oneSidedTextPrice: legacyPaper.oneSidedPrice,
+        twoSidedTextPrice: legacyPaper.twoSidedPrice,
+        oneSidedImagePrice: legacyPaper.imagePrintPrice,
+        twoSidedImagePrice: 0,
+      }
+    }
+    return migrated
+  }
+
+  const blackAndWhite = migrateMode(value.blackAndWhite)
+  const color = migrateMode(value.color)
+  return blackAndWhite && color ? { blackAndWhite, color } : null
+}
+
+function loadPrintSettings(): PrintSettings {
+  try {
+    const stored = localStorage.getItem(printSettingsStorageKey)
+    if (stored === null) return createDefaultPrintSettings()
+
+    const parsed: unknown = JSON.parse(stored)
+    if (isPrintSettings(parsed)) return parsed
+    const migrated = migrateLegacyPrintSettings(parsed)
+    if (migrated) return migrated
+
+    console.error('Stored print settings have an invalid format; using the defaults.')
+  } catch (error) {
+    console.error('Could not load the saved print settings.', error)
+  }
+
+  return createDefaultPrintSettings()
+}
+
+function pruneColleagueChatMessages(messages: ColleagueChatMessage[], retentionHours: 12 | 24): ColleagueChatMessage[] {
+  const expirationTime = Date.now() - retentionHours * 60 * 60 * 1000
+  return messages.filter((message) => Date.parse(message.createdAt) >= expirationTime)
 }
 
 function createCatalogId(type: 'category' | 'service') {
@@ -583,11 +895,14 @@ type IconName =
   | 'moon'
   | 'sun'
   | 'paperclip'
+  | 'send'
   | 'close'
   | 'chevron'
   | 'browser'
   | 'globe'
+  | 'lock'
   | 'printer'
+  | 'truck'
 
 const iconPaths: Record<IconName, ReactNode> = {
   home: <><path d="m3 10 9-7 9 7" /><path d="M5 9v11h14V9M9 20v-7h6v7" /></>,
@@ -617,11 +932,14 @@ const iconPaths: Record<IconName, ReactNode> = {
   moon: <><path d="M20.9 13A9 9 0 0 1 11 3.1 9 9 0 1 0 20.9 13Z" /></>,
   sun: <><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42" /></>,
   paperclip: <><path d="m8 12.5 6.8-6.8a3.2 3.2 0 0 1 4.5 4.5l-8.5 8.5a5 5 0 0 1-7.1-7.1l8.2-8.2" /></>,
+  send: <><path d="m22 2-7 20-4-9-9-4 20-7Z" /><path d="m22 2-11 11" /></>,
   close: <><path d="m18 6-12 12M6 6l12 12" /></>,
   chevron: <><path d="m15 18-6-6 6-6" /></>,
   browser: <><rect x="3" y="4" width="18" height="16" rx="3" /><path d="M3 9h18M7 6.5h.01M10 6.5h.01" /></>,
   globe: <><circle cx="12" cy="12" r="9" /><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18" /></>,
+  lock: <><rect x="4" y="10" width="16" height="11" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2" /></>,
   printer: <><path d="M7 8V3h10v5M7 17H5a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2M7 14h10v7H7zM17 11h.01" /></>,
+  truck: <><path d="M3 6h11v12H3zM14 10h4l3 3v5h-7zM17 10v3h4" /><circle cx="7.5" cy="18" r="2" /><circle cx="17.5" cy="18" r="2" /></>,
 }
 
 function Icon({ name, size = 20, className = '' }: { name: IconName; size?: number; className?: string }) {
@@ -638,6 +956,104 @@ function ThemeToggle({ theme, onToggle }: { theme: Theme; onToggle: () => void }
     <button className="theme-toggle-button" type="button" aria-label={`تغییر به ${nextThemeLabel}`} aria-pressed={theme === 'dark'} title={`تغییر به ${nextThemeLabel}`} onClick={onToggle}>
       <Icon name={theme === 'light' ? 'moon' : 'sun'} size={18} />
     </button>
+  )
+}
+
+const headerTimeFormatter = new Intl.DateTimeFormat('fa-IR', {
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: false,
+  timeZone: 'Asia/Tehran',
+})
+const headerDateFormatter = new Intl.DateTimeFormat('fa-IR-u-ca-persian', {
+  weekday: 'long',
+  day: 'numeric',
+  month: 'long',
+  year: 'numeric',
+  timeZone: 'Asia/Tehran',
+})
+
+function HeaderLiveClock() {
+  const [now, setNow] = useState<Date | null>(null)
+  const [syncFailed, setSyncFailed] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    let serverTimestamp: number | null = null
+    let lastSyncPerformanceTime = 0
+    let currentRequest: AbortController | null = null
+
+    const syncClock = async () => {
+      currentRequest?.abort()
+      const requestController = new AbortController()
+      currentRequest = requestController
+      const requestStart = performance.now()
+      let timedOut = false
+      const timeoutId = window.setTimeout(() => {
+        timedOut = true
+        requestController.abort()
+      }, 10000)
+
+      try {
+        const response = await fetch('https://timeapi.io/api/Time/current/zone?timeZone=UTC', {
+          cache: 'no-store',
+          signal: requestController.signal,
+        })
+        if (!response.ok) throw new Error(`Time API returned HTTP ${response.status}.`)
+
+        const payload: unknown = await response.json()
+        const responseReceived = performance.now()
+        const responseTimestamp = parseInternetUtcTime(payload)
+        serverTimestamp = responseTimestamp + (responseReceived - requestStart) / 2
+        lastSyncPerformanceTime = responseReceived
+        if (active) {
+          setNow(new Date(serverTimestamp))
+          setSyncFailed(false)
+        }
+      } catch (error) {
+        if (!active || (requestController.signal.aborted && !timedOut)) return
+
+        setSyncFailed(true)
+        console.error('Unable to synchronize the header clock with internet time.', error)
+      } finally {
+        window.clearTimeout(timeoutId)
+      }
+    }
+
+    void syncClock()
+    const tickIntervalId = window.setInterval(() => {
+      if (serverTimestamp === null) return
+      setNow(new Date(serverTimestamp + performance.now() - lastSyncPerformanceTime))
+    }, 1000)
+    const syncIntervalId = window.setInterval(() => { void syncClock() }, 60_000)
+
+    return () => {
+      active = false
+      currentRequest?.abort()
+      window.clearInterval(tickIntervalId)
+      window.clearInterval(syncIntervalId)
+    }
+  }, [])
+
+  const dateParts = now ? headerDateFormatter.formatToParts(now) : []
+  const date = ['weekday', 'day', 'month', 'year']
+    .map((type) => dateParts.find((part) => part.type === type)?.value)
+    .filter((part): part is string => part !== undefined)
+    .join(' ')
+  const dateTime = now?.toISOString()
+
+  return (
+    <div className={`header-live-clock ${!now && !syncFailed ? 'has-status' : ''}`} aria-label="ساعت و تاریخ زنده">
+      {now && dateTime ? (
+        <>
+          <time className="header-live-clock-date" dateTime={dateTime}>{date}</time>
+          <time className="header-live-clock-time" dateTime={dateTime} dir="ltr">{headerTimeFormatter.format(now)}</time>
+        </>
+      ) : !syncFailed && (
+        <span className="header-live-clock-message" role="status">در حال دریافت ساعت اینترنتی...</span>
+      )}
+    </div>
   )
 }
 
@@ -768,6 +1184,7 @@ const navItems: { label: string; icon: IconName }[] = [
 ]
 const desktopNavItems: { label: string; icon: IconName }[] = [
   ...navItems.filter((item) => item.label === 'خدمات' || item.label === 'رویدادها'),
+  { label: 'خدمات چاپ و تکثیر', icon: 'printer' },
   { label: 'درباره ما', icon: 'users' },
   { label: 'تماس با ما', icon: 'support' },
 ]
@@ -775,14 +1192,17 @@ const sidebarItems: Record<Role, { label: string; icon: IconName }[]> = {
   admin: [
     { label: 'داشبورد', icon: 'grid' },
     { label: 'کیف پول', icon: 'wallet' },
+    { label: 'مدیران', icon: 'users' },
     { label: 'کاربران', icon: 'users' },
     { label: 'اپراتورها', icon: 'support' },
     { label: 'گفتگوها', icon: 'chat' },
+    { label: 'چت همکاران', icon: 'chat' },
     { label: 'تنظیمات', icon: 'settings' },
   ],
   operator: [
     { label: 'داشبورد', icon: 'grid' },
     { label: 'گفتگوها', icon: 'chat' },
+    { label: 'چت همکاران', icon: 'chat' },
     { label: 'سفارشات انجام‌شده', icon: 'check' },
     { label: 'تنظیمات ظاهری', icon: 'settings' },
   ],
@@ -811,6 +1231,8 @@ function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true)
   const [theme, setTheme] = useState<Theme>(loadTheme)
   const [siteStyle, setSiteStyle] = useState<SiteStyle>(loadSiteStyle)
+  const [colleagueChatSettings, setColleagueChatSettings] = useState<ColleagueChatSettings>(loadColleagueChatSettings)
+  const [printSettings, setPrintSettings] = useState<PrintSettings>(loadPrintSettings)
   useLayoutEffect(() => {
     const appShell = document.querySelector<HTMLElement>('.app-shell')
     if (!appShell) throw new Error('Could not find the app shell to sync the page background.')
@@ -835,6 +1257,68 @@ function App() {
   const [supportMenuOpen, setSupportMenuOpen] = useState(false)
   const compactSupportMenuRef = useRef<HTMLDivElement>(null)
   const desktopSupportMenuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const syncSettings = (event: StorageEvent) => {
+      if (event.key === colleagueChatSettingsStorageKey || event.key === null) {
+        const settings = loadColleagueChatSettings()
+        setColleagueChatSettings(settings)
+        if (!settings.enabled) setActivePage((current) => current === 'چت همکاران' ? 'داشبورد' : current)
+      }
+    }
+
+    window.addEventListener('storage', syncSettings)
+    return () => window.removeEventListener('storage', syncSettings)
+  }, [])
+
+  useEffect(() => {
+    const cleanupExpiredMessages = () => {
+      let didCleanup = false
+      for (const storageKey of [colleagueChatMessagesStorageKey, managerPrivateChatMessagesStorageKey]) {
+        const messages = loadColleagueChatMessages(storageKey)
+        const retained = pruneColleagueChatMessages(messages, colleagueChatSettings.retentionHours)
+        if (retained.length === messages.length) continue
+
+        try {
+          localStorage.setItem(storageKey, JSON.stringify(retained))
+          didCleanup = true
+        } catch (error) {
+          console.error('Could not clean up expired colleague chat messages.', error)
+        }
+      }
+
+      if (didCleanup) window.dispatchEvent(new Event(colleagueChatCleanupEvent))
+    }
+
+    cleanupExpiredMessages()
+    const cleanupInterval = window.setInterval(cleanupExpiredMessages, 60_000)
+    return () => window.clearInterval(cleanupInterval)
+  }, [colleagueChatSettings.retentionHours])
+
+  const saveColleagueChatSettings = (settings: ColleagueChatSettings): boolean => {
+    try {
+      localStorage.setItem(colleagueChatSettingsStorageKey, JSON.stringify(settings))
+    } catch (error) {
+      console.error('Could not save colleague chat settings.', error)
+      return false
+    }
+
+    setColleagueChatSettings(settings)
+    if (!settings.enabled) setActivePage((current) => current === 'چت همکاران' ? 'داشبورد' : current)
+    return true
+  }
+
+  const savePrintSettings = (settings: PrintSettings): boolean => {
+    try {
+      localStorage.setItem(printSettingsStorageKey, JSON.stringify(settings))
+    } catch (error) {
+      console.error('Could not save print settings.', error)
+      return false
+    }
+
+    setPrintSettings(settings)
+    return true
+  }
 
   const updateProfileImage = (image: string | null): boolean => {
     const nextImages = { ...profileImages }
@@ -1275,12 +1759,16 @@ function App() {
   const toggleTheme = () => setTheme((current) => current === 'light' ? 'dark' : 'light')
 
   const contentTitle = activeNav === 'خانه' || activeNav === 'حساب کاربری'
-    ? activePage
+    ? (!colleagueChatSettings.enabled && activePage === 'چت همکاران' ? 'داشبورد' : activePage)
     : activeNav
-  const isServices = activeNav === 'خدمات'
+  const displayedActivePage = !colleagueChatSettings.enabled && activePage === 'چت همکاران' ? 'داشبورد' : activePage
+  const isServices = activeNav === 'خدمات' || activeNav === 'خدمات چاپ و تکثیر'
   const isCart = activeNav === 'سبد خرید'
   const isEmptyCart = isCart && cart.length === 0
   const isSidebarlessPage = ['رویدادها', 'درباره ما', 'تماس با ما'].includes(activeNav)
+  const visibleSidebarItems = colleagueChatSettings.enabled
+    ? sidebarItems[role]
+    : sidebarItems[role].filter((item) => item.label !== 'چت همکاران')
   const cartCount = cart.reduce((total, item) => total + item.quantity, 0)
   const conversationCount = demoOrders.filter((order) => role === 'operator'
     ? order.operatorId === demoOperators[0].id
@@ -1331,6 +1819,7 @@ function App() {
                 {item.label === 'سبد خرید' && cartCount > 0 && <span className="cart-count">{new Intl.NumberFormat('fa-IR').format(cartCount)}</span>}
               </button>
             ))}
+            <HeaderLiveClock />
           </nav>
           <div className="topbar-actions">
               <label className="search-box">
@@ -1383,7 +1872,11 @@ function App() {
       {isServices ? (
         <>
           <main className="service-main">
-            <ServiceCatalog catalog={catalog} view={serviceView} setView={setServiceView} search={serviceSearch} setSearch={setServiceSearch} onAddToCart={addToCart} notice={cartNotice} openServiceId={requestedServiceId} onServiceRequestHandled={() => setRequestedServiceId(null)} />
+            {activeNav === 'خدمات چاپ و تکثیر' ? (
+              <PrintCopyPage settings={printSettings} />
+            ) : (
+              <ServiceCatalog catalog={catalog} view={serviceView} setView={setServiceView} search={serviceSearch} setSearch={setServiceSearch} onAddToCart={addToCart} notice={cartNotice} openServiceId={requestedServiceId} onServiceRequestHandled={() => setRequestedServiceId(null)} onOpenPrintCopy={() => setActiveNav('خدمات چاپ و تکثیر')} />
+            )}
           </main>
         </>
       ) : isCart ? (
@@ -1424,8 +1917,8 @@ function App() {
             ><Icon name="chevron" size={18} /></button>
             <div className="sidebar-label">منوی {roleLabels[role]}</div>
             <nav className="side-nav" id="account-sidebar-nav" aria-label={`منوی ${roleLabels[role]}`}>
-              {sidebarItems[role].map((item) => (
-              <button key={item.label} type="button" className={`side-link ${activePage === item.label && activeNav === 'حساب کاربری' ? 'active' : ''}`} aria-label={item.label} title={item.label} onClick={() => { setActivePage(item.label); setActiveNav('حساب کاربری') }}>
+              {visibleSidebarItems.map((item) => (
+              <button key={item.label} type="button" className={`side-link ${displayedActivePage === item.label && activeNav === 'حساب کاربری' ? 'active' : ''}`} aria-label={item.label} title={item.label} onClick={() => { setActivePage(item.label); setActiveNav('حساب کاربری') }}>
                   <Icon name={item.icon} size={18} />
                   <span>{item.label}</span>
                   {item.label === 'گفتگوها' && conversationCount > 0 && <span className="side-count">{new Intl.NumberFormat('fa-IR').format(conversationCount)}</span>}
@@ -1441,20 +1934,28 @@ function App() {
           <section className="dashboard">
             {activeNav !== 'خانه' && activeNav !== 'حساب کاربری' ? (
               <SectionPage section={activeNav} role={role} events={events} catalog={catalog} onOpenService={openEventService} onOpenContact={openSupportConversations} walletBalance={demoWalletBalance} />
-            ) : activePage === 'داشبورد' ? (
+            ) : displayedActivePage === 'داشبورد' ? (
               <Dashboard role={role} range={range} setRange={setRange} search={search} setActivePage={setActivePage} setActiveNav={setActiveNav} walletBalance={demoWalletBalance} />
             ) : (
-              <PanelPage page={activePage} role={role} profileImage={profileImages[role] ?? ''} onProfileImageChange={updateProfileImage} search={search} catalog={catalog} events={events} siteStyle={siteStyle} setSiteStyle={setSiteStyle} addCategory={addCategory} addService={addService} updateCategory={updateCategory} deleteCategory={deleteCategory} updateService={updateService} deleteService={deleteService} addEvent={addEvent} deleteEvent={deleteEvent} demoOrders={demoOrders} activeDemoOrderId={activeDemoOrderId} onOpenDemoOrder={setActiveDemoOrderId} onSendDemoMessage={sendDemoMessage} onOfferAdditionalService={offerDemoAdditionalService} onStartAdditionalServicePayment={startDemoAdditionalServicePayment} onCompleteAdditionalServicePayment={completeDemoAdditionalServicePayment} onCloseDemoConversation={closeDemoConversation} onCancelDemoOrder={cancelDemoOrder} walletBalance={demoWalletBalance} />
+              <PanelPage page={displayedActivePage} role={role} profileImage={profileImages[role] ?? ''} onProfileImageChange={updateProfileImage} search={search} catalog={catalog} events={events} siteStyle={siteStyle} setSiteStyle={setSiteStyle} colleagueChatSettings={colleagueChatSettings} onSaveColleagueChatSettings={saveColleagueChatSettings} printSettings={printSettings} onSavePrintSettings={savePrintSettings} addCategory={addCategory} addService={addService} updateCategory={updateCategory} deleteCategory={deleteCategory} updateService={updateService} deleteService={deleteService} addEvent={addEvent} deleteEvent={deleteEvent} demoOrders={demoOrders} activeDemoOrderId={activeDemoOrderId} onOpenDemoOrder={setActiveDemoOrderId} onSendDemoMessage={sendDemoMessage} onOfferAdditionalService={offerDemoAdditionalService} onStartAdditionalServicePayment={startDemoAdditionalServicePayment} onCompleteAdditionalServicePayment={completeDemoAdditionalServicePayment} onCloseDemoConversation={closeDemoConversation} onCancelDemoOrder={cancelDemoOrder} walletBalance={demoWalletBalance} />
             )}
           </section>
         </div>
       </main>}
       <footer className={`mobile-bottom-nav ${isServices ? 'service-bottom-nav' : ''}`} aria-label="ناوبری اصلی پایین صفحه">
-        <button className={`mobile-service-launch ${isServices ? 'active' : ''}`} type="button" onClick={() => setActiveNav('خدمات')} aria-label="خدمات" title="خدمات">
+        <button className={`mobile-service-launch ${activeNav === 'خدمات' ? 'active' : ''}`} type="button" onClick={() => setActiveNav('خدمات')} aria-label="خدمات" title="خدمات">
           <Icon name="grid" size={21} />
         </button>
         <div className="mobile-bottom-nav-links">
-          {navItems.filter((item) => item.label !== 'خدمات').map((item) => <button key={item.label} className={activeNav === item.label ? 'active' : ''} onClick={() => setActiveNav(item.label)} aria-label={item.label === 'سبد خرید' && cartCount > 0 ? `سبد خرید، ${cartCount} مورد` : item.label}><span className="bottom-nav-icon"><Icon name={item.icon} size={19} />{item.label === 'سبد خرید' && cartCount > 0 && <span className="cart-count">{new Intl.NumberFormat('fa-IR').format(cartCount)}</span>}</span><span>{item.label}</span></button>)}
+          {navItems.filter((item) => item.label !== 'خدمات' && item.label !== 'کیف پول' && item.label !== 'حساب کاربری').map((item) => <button key={item.label} className={activeNav === item.label ? 'active' : ''} onClick={() => setActiveNav(item.label)} aria-label={item.label === 'سبد خرید' && cartCount > 0 ? `سبد خرید، ${cartCount} مورد` : item.label}><span className="bottom-nav-icon"><Icon name={item.icon} size={19} />{item.label === 'سبد خرید' && cartCount > 0 && <span className="cart-count">{new Intl.NumberFormat('fa-IR').format(cartCount)}</span>}</span><span>{item.label}</span></button>)}
+          <button type="button" className={activeNav === 'خدمات چاپ و تکثیر' ? 'active' : ''} onClick={() => setActiveNav('خدمات چاپ و تکثیر')} aria-label="خدمات چاپ و تکثیر" title="خدمات چاپ و تکثیر">
+            <span className="bottom-nav-icon"><Icon name="printer" size={19} /></span>
+            <span>چاپ و تکثیر</span>
+          </button>
+          <button type="button" className={activeNav === 'حساب کاربری' ? 'active' : ''} onClick={() => setActiveNav('حساب کاربری')} aria-label="حساب کاربری">
+            <span className="bottom-nav-icon"><Icon name="user" size={19} /></span>
+            <span>حساب کاربری</span>
+          </button>
         </div>
       </footer>
       <div className="desktop-support-wrap" ref={desktopSupportMenuRef}>
@@ -1637,6 +2138,354 @@ function MetricCard({ title, value, unit, change, icon, tone, note }: { title: s
   )
 }
 
+function PrintCopyPage({ settings }: { settings: PrintSettings }) {
+  const [printType, setPrintType] = useState<'bw' | 'color'>('bw')
+  const [paperSize, setPaperSize] = useState<'A3' | 'A4' | 'A5'>('A4')
+  const [printSides, setPrintSides] = useState<'single' | 'double'>('single')
+  const [printContent, setPrintContent] = useState<'text' | 'image' | 'combined'>('text')
+  const [deliveryMethod, setDeliveryMethod] = useState<'post' | 'courier' | null>(null)
+  const [termsOpen, setTermsOpen] = useState(false)
+  const [quantity, setQuantity] = useState(300)
+  const [file, setFile] = useState<File | null>(null)
+  const [fileError, setFileError] = useState('')
+  const [orderNotice, setOrderNotice] = useState('')
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const termsLinkRef = useRef<HTMLButtonElement>(null)
+  const termsCloseRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    if (!termsOpen) return
+
+    const termsTrigger = termsLinkRef.current
+    const previousBodyOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setTermsOpen(false)
+    }
+    window.addEventListener('keydown', closeOnEscape)
+    termsCloseRef.current?.focus()
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflow
+      window.removeEventListener('keydown', closeOnEscape)
+      termsTrigger?.focus()
+    }
+  }, [termsOpen])
+
+  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = event.currentTarget.files?.[0]
+    if (!selectedFile) return
+
+    const extension = selectedFile.name.split('.').pop()?.toLocaleLowerCase('en-US')
+    if (!extension || !['pdf', 'jpg', 'jpeg', 'png'].includes(extension)) {
+      setFile(null)
+      setFileError('فقط فایل‌های PDF، JPG و PNG پذیرفته می‌شوند.')
+      event.currentTarget.value = ''
+      return
+    }
+
+    if (selectedFile.size > 10 * 1024 * 1024) {
+      setFile(null)
+      setFileError('حجم فایل نباید بیشتر از ۱۰ مگابایت باشد.')
+      event.currentTarget.value = ''
+      return
+    }
+
+    setFile(selectedFile)
+    setFileError('')
+    setOrderNotice('')
+  }
+
+  const removeFile = () => {
+    setFile(null)
+    setFileError('')
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setOrderNotice('مشخصات سفارش آماده است؛ ثبت آنلاین پس از اتصال سرویس و درگاه پرداخت فعال می‌شود.')
+  }
+
+  const paperSizes: { value: 'A3' | 'A4' | 'A5'; label: string; detail: string }[] = [
+    { value: 'A3', label: 'A3', detail: 'سایز برگ: ۲۹٫۷ × ۴۲ سانتی‌متر' },
+    { value: 'A4', label: 'A4', detail: 'سایز برگ: ۲۱ × ۲۹٫۷ سانتی‌متر' },
+    { value: 'A5', label: 'A5', detail: 'سایز برگ: ۱۴٫۸ × ۲۱ سانتی‌متر' },
+  ]
+  const paperIdBySize: Record<'A3' | 'A4' | 'A5', PrintPaperId> = { A3: 'a3', A4: 'a4', A5: 'a5' }
+  const selectedRates = settings[printType === 'bw' ? 'blackAndWhite' : 'color'][paperIdBySize[paperSize]]
+  const textRate = printSides === 'single' ? selectedRates.oneSidedTextPrice : selectedRates.twoSidedTextPrice
+  const imageRate = printSides === 'single' ? selectedRates.oneSidedImagePrice : selectedRates.twoSidedImagePrice
+  const selectedPriceComponents = printContent === 'text'
+    ? [textRate]
+    : printContent === 'image'
+      ? [imageRate]
+      : [textRate, imageRate]
+  const hasSelectedRates = selectedPriceComponents.every((rate) => rate > 0)
+  const calculatedPricePerSheet = hasSelectedRates
+    ? selectedPriceComponents.reduce((total, rate) => total + rate, 0)
+    : null
+  const pricePerSheet = calculatedPricePerSheet !== null && Number.isSafeInteger(calculatedPricePerSheet)
+    ? calculatedPricePerSheet
+    : null
+  const calculatedOrderTotal = pricePerSheet !== null ? pricePerSheet * quantity : null
+  const orderTotal = calculatedOrderTotal !== null && Number.isSafeInteger(calculatedOrderTotal)
+    ? calculatedOrderTotal
+    : null
+  const formatPrintPrice = (price: number) => `${new Intl.NumberFormat('fa-IR').format(price)} ریال`
+  const orderSteps: { title: string; detail: string; icon: IconName }[] = [
+    { title: 'ثبت سفارش', detail: 'فایل و مشخصات را ارسال کن', icon: 'receipt' },
+    { title: 'بررسی و تأیید', detail: 'فایل و هزینه بررسی می‌شود', icon: 'check' },
+    { title: 'چاپ', detail: 'سفارش با دقت چاپ می‌شود', icon: 'printer' },
+    { title: 'آماده‌سازی', detail: 'سفارش بسته‌بندی می‌شود', icon: 'cart' },
+    { title: 'ارسال', detail: 'سفارش به دستت می‌رسد', icon: 'truck' },
+  ]
+
+  return (
+    <div className="print-copy-page">
+      <section className="print-hero" aria-labelledby="print-hero-title">
+        <div className="print-hero-visual" aria-hidden="true">
+          <span className="print-hero-paper print-hero-paper-back" />
+          <span className="print-hero-paper print-hero-paper-front"><i /><i /><i /></span>
+          <span className="print-hero-printer"><Icon name="printer" size={48} /></span>
+        </div>
+        <div className="print-hero-copy">
+          <span className="print-hero-tag"><Icon name="printer" size={14} /> چاپ و تکثیر</span>
+          <h1 id="print-hero-title">چاپ و تکثیر</h1>
+          <p>نوع چاپ و اندازهٔ کاغذ را انتخاب کن، فایل را بفرست و مشخصات سفارشت را ثبت کن.</p>
+        </div>
+        <div className="print-hero-benefits" aria-label="ویژگی‌های خدمات چاپ">
+          <div><span><Icon name="check" size={16} /></span><p><strong>انتخاب آسان</strong><small>تنظیمات روشن و ساده</small></p></div>
+          <div><span><Icon name="clock" size={16} /></span><p><strong>پیگیری سفارش</strong><small>اطلاع از مراحل انجام</small></p></div>
+          <div><span><Icon name="receipt" size={16} /></span><p><strong>برآورد هزینه</strong><small>پس از بررسی فایل</small></p></div>
+        </div>
+      </section>
+
+      <div className="print-order-layout">
+        <form className="print-order-form" id="print-copy-order-form" onSubmit={handleSubmit}>
+          <section className="panel print-panel" aria-labelledby="print-type-heading">
+            <div className="print-panel-heading">
+              <div><span className="eyebrow">مرحلهٔ اول</span><h2 id="print-type-heading">انتخاب نوع چاپ</h2></div>
+              <span>یک گزینه را انتخاب کن</span>
+            </div>
+            <div className="print-choice-grid print-type-grid" role="radiogroup" aria-labelledby="print-type-heading">
+              <label className={`print-choice-card ${printType === 'bw' ? 'selected' : ''}`}>
+                <input type="radio" name="print-type" value="bw" checked={printType === 'bw'} onChange={() => setPrintType('bw')} />
+                <span className="print-choice-icon"><Icon name="receipt" size={20} /></span>
+                <span className="print-choice-copy"><strong>چاپ سیاه و سفید</strong><small>سریع، باکیفیت و اقتصادی</small></span>
+                {printType === 'bw' && <Icon className="print-choice-check" name="check" size={17} />}
+              </label>
+              <label className={`print-choice-card ${printType === 'color' ? 'selected' : ''}`}>
+                <input type="radio" name="print-type" value="color" checked={printType === 'color'} onChange={() => setPrintType('color')} />
+                <span className="print-choice-icon color"><Icon name="receipt" size={20} /></span>
+                <span className="print-choice-copy"><strong>چاپ رنگی</strong><small>مناسب فایل‌های رنگی و تصویری</small></span>
+                {printType === 'color' && <Icon className="print-choice-check" name="check" size={17} />}
+              </label>
+            </div>
+          </section>
+
+          <section className="panel print-panel" aria-labelledby="print-size-heading">
+            <div className="print-panel-heading">
+              <div><span className="eyebrow">اندازهٔ کاغذ</span><h2 id="print-size-heading">انتخاب سایز کاغذ</h2></div>
+              <span>اندازهٔ موردنظر را انتخاب کن</span>
+            </div>
+            <div className="print-size-grid" role="radiogroup" aria-labelledby="print-size-heading">
+              {paperSizes.map((size) => (
+                <label className={`print-size-option ${paperSize === size.value ? 'selected' : ''}`} key={size.value}>
+                  <input type="radio" name="paper-size" value={size.value} checked={paperSize === size.value} onChange={() => setPaperSize(size.value)} />
+                  <Icon name="receipt" size={17} />
+                  <strong>{size.label}</strong>
+                  <small>{size.detail}</small>
+                </label>
+              ))}
+            </div>
+          </section>
+
+          <section className="panel print-panel" aria-labelledby="print-sides-heading">
+            <div className="print-panel-heading">
+              <div><span className="eyebrow">تنظیمات چاپ</span><h2 id="print-sides-heading">قابلیت چاپ</h2></div>
+              <span>یک یا دوطرفه</span>
+            </div>
+            <div className="print-sides-grid" role="radiogroup" aria-labelledby="print-sides-heading">
+              <label className={`print-sides-option ${printSides === 'single' ? 'selected' : ''}`}>
+                <input type="radio" name="print-sides" value="single" checked={printSides === 'single'} onChange={() => setPrintSides('single')} />
+                <span><strong>یک‌رو</strong><small>چاپ یک‌طرفه</small></span>
+                {printSides === 'single' && <Icon name="check" size={16} />}
+              </label>
+              <label className={`print-sides-option ${printSides === 'double' ? 'selected' : ''}`}>
+                <input type="radio" name="print-sides" value="double" checked={printSides === 'double'} onChange={() => setPrintSides('double')} />
+                <span><strong>دو‌رو</strong><small>چاپ دوطرفه</small></span>
+                {printSides === 'double' && <Icon name="check" size={16} />}
+              </label>
+            </div>
+
+            <div className="print-content-heading">
+              <strong id="print-content-heading">محتوای فایل</strong>
+              <span>یک گزینه را انتخاب کن</span>
+            </div>
+            <div className="print-sides-grid print-content-grid" role="radiogroup" aria-labelledby="print-content-heading">
+              <label className={`print-sides-option ${printContent === 'text' ? 'selected' : ''}`}>
+                <input type="radio" name="print-content" value="text" checked={printContent === 'text'} onChange={() => setPrintContent('text')} />
+                <span><strong>متن</strong><small>چاپ محتوای متنی</small></span>
+                {printContent === 'text' && <Icon name="check" size={16} />}
+              </label>
+              <label className={`print-sides-option ${printContent === 'image' ? 'selected' : ''}`}>
+                <input type="radio" name="print-content" value="image" checked={printContent === 'image'} onChange={() => setPrintContent('image')} />
+                <span><strong>تصویر</strong><small>چاپ محتوای تصویری</small></span>
+                {printContent === 'image' && <Icon name="check" size={16} />}
+              </label>
+              <label className={`print-sides-option ${printContent === 'combined' ? 'selected' : ''}`}>
+                <input type="radio" name="print-content" value="combined" checked={printContent === 'combined'} onChange={() => setPrintContent('combined')} />
+                <span><strong>متن و تصویر (ترکیبی)</strong><small>چاپ متن همراه با تصویر</small></span>
+                {printContent === 'combined' && <Icon name="check" size={16} />}
+              </label>
+            </div>
+          </section>
+
+          <div className="print-file-quantity-grid">
+            <section className="panel print-panel print-file-panel" aria-labelledby="print-file-heading">
+              <div className="print-panel-heading">
+                <div><span className="eyebrow">فایل موردنظر</span><h2 id="print-file-heading">فایل سفارش</h2></div>
+                <span>PDF، JPG یا PNG؛ حداکثر ۱۰ مگابایت</span>
+              </div>
+              {file ? (
+                <div className="print-selected-file">
+                  <span className="print-file-icon"><Icon name="receipt" size={19} /></span>
+                  <span className="print-file-name"><strong>{file.name}</strong><small>{formatDemoFileSize(file.size)}</small></span>
+                  <button type="button" className="print-file-remove" aria-label="حذف فایل انتخاب‌شده" onClick={removeFile}><Icon name="close" size={17} /></button>
+                </div>
+              ) : (
+                <label className="print-file-drop">
+                  <input ref={fileInputRef} className="print-file-input" type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" aria-label="انتخاب فایل سفارش" required onChange={handleFileChange} />
+                  <span className="print-file-icon"><Icon name="download" size={19} /></span>
+                  <span><strong>آپلود فایل سفارش</strong><small>برای انتخاب فایل از دستگاهت لمس کن</small></span>
+                </label>
+              )}
+              {fileError && <p className="print-file-error" role="alert">{fileError}</p>}
+            </section>
+
+            <section className="panel print-panel print-quantity-panel" aria-labelledby="print-quantity-heading">
+              <div className="print-panel-heading">
+                <div><span className="eyebrow">حداقل ۳۰۰ برگ</span><h2 id="print-quantity-heading">تعداد برگ</h2></div>
+              </div>
+              <div className="print-quantity-control">
+                <button type="button" aria-label="افزایش تعداد برگ" onClick={() => setQuantity((current) => current < Number.MAX_SAFE_INTEGER ? current + 1 : current)}><Icon name="plus" size={17} /></button>
+                <input aria-label="تعداد برگ" type="number" inputMode="numeric" min={300} step={1} value={quantity} onChange={(event) => {
+                  const nextQuantity = Number(normalizeDigits(event.currentTarget.value))
+                  if (Number.isSafeInteger(nextQuantity) && nextQuantity >= 300) setQuantity(nextQuantity)
+                }} />
+                <button type="button" aria-label="کاهش تعداد برگ" disabled={quantity <= 300} onClick={() => setQuantity((current) => Math.max(300, current - 1))}><Icon name="minus" size={17} /></button>
+              </div>
+            </section>
+          </div>
+
+          <section className="panel print-panel print-notes-panel" aria-labelledby="print-notes-heading">
+            <div className="print-panel-heading">
+              <div><span className="eyebrow">توضیحات تکمیلی</span><h2 id="print-notes-heading">توضیحات سفارش</h2></div>
+              <span>در صورت نیاز، توضیحاتت را بنویس</span>
+            </div>
+            <textarea name="print-notes" rows={3} maxLength={1000} placeholder="مثلاً ترتیب صفحات، نوع چاپ یا نکتهٔ خاصی دربارهٔ فایل..." />
+          </section>
+
+          <p className="print-delivery-note"><Icon name="clock" size={15} /> هزینهٔ ارسال، در صورت انتخاب، جداگانه و پس از بررسی سفارش اعلام می‌شود.</p>
+          {orderNotice && <p className="print-order-notice" role="status">{orderNotice}</p>}
+        </form>
+
+        <aside className="print-order-sidebar" aria-label="خلاصه و ارسال سفارش">
+          <section className="panel print-summary-card">
+            <div className="print-sidebar-heading"><span className="print-sidebar-icon"><Icon name="receipt" size={18} /></span><div><h2>محاسبه قیمت</h2><p>خلاصهٔ انتخاب‌های تو</p></div></div>
+            <dl className="print-summary-list">
+              <div><dt>نوع چاپ</dt><dd>{printType === 'bw' ? 'سیاه و سفید' : 'رنگی'}</dd></div>
+              <div><dt>اندازه کاغذ</dt><dd>{paperSize}</dd></div>
+              <div><dt>قابلیت چاپ</dt><dd>{printSides === 'single' ? 'یک‌رو' : 'دو‌رو'}</dd></div>
+              <div><dt>نوع محتوا</dt><dd>{printContent === 'text' ? 'متن' : printContent === 'image' ? 'تصویر' : 'متن و تصویر (ترکیبی)'}</dd></div>
+              <div><dt>قیمت هر برگ</dt><dd>{pricePerSheet !== null ? formatPrintPrice(pricePerSheet) : 'نرخ ثبت نشده'}</dd></div>
+              <div><dt>تعداد برگ</dt><dd>{new Intl.NumberFormat('fa-IR').format(quantity)}</dd></div>
+              <div><dt>روش ارسال</dt><dd>{deliveryMethod === 'post' ? 'پست (پس‌کرایه)' : deliveryMethod === 'courier' ? 'پیک (مخصوص شهر اصفهان)' : 'انتخاب نشده'}</dd></div>
+            </dl>
+            <div className="print-summary-total"><span>مبلغ کل</span><strong>{orderTotal !== null ? formatPrintPrice(orderTotal) : pricePerSheet === null ? 'پس از ثبت نرخ' : 'قیمت قابل محاسبه نیست'}</strong></div>
+          </section>
+
+          <section className="panel print-delivery-card">
+            <div className="print-sidebar-heading"><span className="print-sidebar-icon"><Icon name="cart" size={18} /></span><div><h2>ارسال سفارش</h2><p>روش ارسال سفارش را انتخاب کن</p></div></div>
+            <div className="print-sides-grid print-delivery-options" role="radiogroup" aria-label="روش ارسال سفارش">
+              <label className={`print-sides-option ${deliveryMethod === 'post' ? 'selected' : ''}`}>
+                <input type="radio" name="delivery-method" form="print-copy-order-form" value="post" required checked={deliveryMethod === 'post'} onChange={() => setDeliveryMethod('post')} />
+                <span><strong>پست (پس‌کرایه)</strong><small>هزینهٔ ارسال هنگام تحویل دریافت می‌شود.</small></span>
+                {deliveryMethod === 'post' && <Icon name="check" size={16} />}
+              </label>
+              <label className={`print-sides-option ${deliveryMethod === 'courier' ? 'selected' : ''}`}>
+                <input type="radio" name="delivery-method" form="print-copy-order-form" value="courier" required checked={deliveryMethod === 'courier'} onChange={() => setDeliveryMethod('courier')} />
+                <span><strong>پیک (مخصوص شهر اصفهان)</strong><small>ویژهٔ سفارش‌های داخل شهر اصفهان.</small></span>
+                {deliveryMethod === 'courier' && <Icon name="check" size={16} />}
+              </label>
+            </div>
+          </section>
+
+          <section className="panel print-submit-card">
+            <div className="print-terms">
+              <label className="print-terms-accept">
+                <input type="checkbox" form="print-copy-order-form" required />
+                <span>پذیرش قوانین و شرایط</span>
+              </label>
+              <button ref={termsLinkRef} className="print-terms-link" type="button" onClick={() => setTermsOpen(true)}>مطالعهٔ قوانین</button>
+            </div>
+            <button className="primary-button print-submit-button" type="submit" form="print-copy-order-form"><Icon name="arrow" size={16} /> پرداخت و ثبت سفارش</button>
+            <p><Icon name="lock" size={13} /> ثبت آنلاین و پرداخت پس از اتصال سرویس فعال می‌شود.</p>
+          </section>
+        </aside>
+      </div>
+
+      <section className="panel print-process" aria-labelledby="print-process-heading">
+        <div className="print-process-heading"><span className="eyebrow">از ثبت تا تحویل</span><h2 id="print-process-heading">مراحل انجام سفارش</h2></div>
+        <ol className="print-process-steps">
+          {orderSteps.map((step, index) => (
+            <li className="print-process-step" key={index}>
+              <span className="print-process-art"><Icon name={step.icon} size={29} /></span>
+              <span className="print-step-number">{new Intl.NumberFormat('fa-IR', { minimumIntegerDigits: 2 }).format(index + 1)}</span>
+              <strong>{step.title}</strong>
+              <small>{step.detail}</small>
+            </li>
+          ))}
+        </ol>
+      </section>
+
+      {termsOpen && (
+        <div className="print-terms-modal-backdrop" onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setTermsOpen(false)
+        }}>
+          <section className="print-terms-dialog" role="dialog" aria-modal="true" aria-labelledby="print-terms-title" aria-describedby="print-terms-description">
+            <header className="print-terms-dialog-header">
+              <div>
+                <h2 id="print-terms-title">قوانین و شرایط خدمات چاپ</h2>
+                <p id="print-terms-description">لطفاً پیش از ثبت سفارش، موارد زیر را با دقت مطالعه کنید.</p>
+              </div>
+              <button ref={termsCloseRef} className="print-terms-close" type="button" aria-label="بستن قوانین چاپ" onClick={() => setTermsOpen(false)}>×</button>
+            </header>
+            <div className="print-terms-dialog-body">
+              <article className="print-terms-introduction">
+                <h3>مقدمه</h3>
+                <p>با سلام و احترام به شما کاربر گرامی، استفاده از وب‌سایت کافی‌نت کشوری و ثبت هرگونه سفارش در این سایت، به منزلهٔ مطالعهٔ کامل، آگاهی کامل و پذیرش تمامی قوانین و مقررات زیر از سوی شماست. لطفاً پیش از ثبت سفارش، این موارد را با دقت مطالعه فرمایید.</p>
+              </article>
+              {printTermsSections.map((section) => (
+                <article className="print-terms-section" key={section.title}>
+                  <h3>{section.title}</h3>
+                  <ul>{section.items.map((item) => <li key={item}>{item}</li>)}</ul>
+                  {section.note && <p className="print-terms-note">{section.note}</p>}
+                </article>
+              ))}
+            </div>
+            <footer className="print-terms-dialog-footer">
+              <span>با ثبت سفارش، پذیرش این قوانین و شرایط الزامی است.</span>
+              <button className="primary-button" type="button" onClick={() => setTermsOpen(false)}>متوجه شدم</button>
+            </footer>
+          </section>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ServiceCatalog({
   catalog,
   view,
@@ -1647,6 +2496,7 @@ function ServiceCatalog({
   notice,
   openServiceId,
   onServiceRequestHandled,
+  onOpenPrintCopy,
 }: {
   catalog: ServiceCatalogData
   view: ServiceView
@@ -1657,6 +2507,7 @@ function ServiceCatalog({
   notice: string
   openServiceId: string | null
   onServiceRequestHandled: () => void
+  onOpenPrintCopy: () => void
 }) {
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null)
   const [localSelectedServiceId, setLocalSelectedServiceId] = useState<string | null>(null)
@@ -1702,6 +2553,11 @@ function ServiceCatalog({
 
   return (
     <>
+      <section className="catalog-print-promo" aria-label="خدمات چاپ و تکثیر">
+        <span className="catalog-print-promo-icon"><Icon name="printer" size={20} /></span>
+        <div><strong>چاپ و تکثیر</strong><small>ثبت سفارش چاپ از صفحهٔ اختصاصی</small></div>
+        <button type="button" onClick={onOpenPrintCopy}>ورود به صفحه <Icon name="arrow" size={14} /></button>
+      </section>
       <div className="service-tabs" role="tablist" aria-label="نمایش خدمات">
         <button role="tab" aria-selected={view === 'categories'} className={view === 'categories' ? 'active' : ''} onClick={() => { setView('categories'); setSelectedCategoryId(null) }}>دسته‌بندی</button>
         <button role="tab" aria-selected={view === 'all'} className={view === 'all' ? 'active' : ''} onClick={() => { setView('all'); setSelectedCategoryId(null) }}>همه خدمات</button>
@@ -2457,7 +3313,7 @@ function SectionPage({
         : isAbout
           ? 'اینجا دربارهٔ فضای کافی‌نت ایکس و کاری که انجام می‌دهیم بیشتر بدان.'
           : isContact
-            ? 'برای پرسش یا پیگیری سفارش، از راه گفت‌وگو با پشتیبانی با ما در ارتباط باش.'
+            ? 'برای پرسش یا پیگیری سفارش، از گفت‌وگوی پشتیبانی همین‌جا استفاده کن.'
             : 'فضای شخصی تو برای تجربهٔ خدمات بهتر.'
   return (
     <>
@@ -2542,22 +3398,9 @@ function SectionPage({
           })}
         </div>
       ) : isAbout ? (
-        <section className="panel info-page-panel">
-          <span className="feature-icon violet"><Icon name="users" size={22} /></span>
-          <div>
-            <h2>خدمات و تجربه‌ها در یک فضای ساده</h2>
-            <p>کافی‌نت ایکس فضایی یکپارچه برای پیدا کردن و استفاده از خدمات، دنبال‌کردن رویدادها و مدیریت سفارش‌ها فراهم می‌کند؛ پشتیبانی هم برای راهنمایی همراه شماست.</p>
-          </div>
-        </section>
+        <AboutUsPage />
       ) : isContact ? (
-        <section className="panel info-page-panel">
-          <span className="feature-icon mint"><Icon name="support" size={22} /></span>
-          <div>
-            <h2>چطور می‌تونیم کمک کنیم؟</h2>
-            <p>برای پرسش دربارهٔ خدمات یا پیگیری سفارش، از طریق گفت‌وگو با پشتیبانی با ما در ارتباط باش.</p>
-            <button className="primary-button" type="button" onClick={onOpenContact}><Icon name="chat" size={17} /> گفتگو با پشتیبانی</button>
-          </div>
-        </section>
+        <ContactUsPage onOpenContact={onOpenContact} />
       ) : (
         <div className="feature-grid">{(isServices ? [
           ['طراحی و برندینگ', 'از ایده تا هویت بصری ماندگار', 'sparkle', 'violet'],
@@ -2570,6 +3413,138 @@ function SectionPage({
         ] as [string, string, IconName, string][]).map(([name, text, icon, tone]) => <article className="feature-card" key={name}><span className={`feature-icon ${tone}`}><Icon name={icon} size={22} /></span><h2>{name}</h2><p>{text}</p><button>مشاهده جزئیات <Icon name="arrow" size={15} /></button></article>)}</div>
       )}
     </>
+  )
+}
+
+function ContactUsPage({ onOpenContact }: { onOpenContact?: () => void }) {
+  const topics: { title: string; description: string; icon: IconName; tone: string }[] = [
+    { title: 'پیگیری سفارش', description: 'وضعیت یا جزئیات سفارش ثبت‌شده', icon: 'receipt', tone: 'violet' },
+    { title: 'راهنمایی خدمات', description: 'انتخاب خدمت متناسب با نیازت', icon: 'grid', tone: 'blue' },
+    { title: 'حساب کاربری', description: 'پرسش دربارهٔ حساب و دسترسی‌ها', icon: 'user', tone: 'mint' },
+  ]
+
+  return (
+    <div className="contact-page">
+      <div className="contact-content-grid">
+        <section className="panel contact-support-card" aria-labelledby="contact-support-title">
+          <div className="contact-support-topline">
+            <span className="contact-support-icon"><Icon name="support" size={21} /></span>
+            <span className="contact-support-label">راه ارتباط با ما</span>
+          </div>
+          <div className="contact-support-copy">
+            <span className="eyebrow">پشتیبانی کافی‌نت ایکس</span>
+            <h2 id="contact-support-title">گفت‌وگو را شروع کنیم؟</h2>
+            <p>درخواستت را در گفت‌وگوی پشتیبانی مطرح کن تا همکاران بتوانند راهنمایی‌ات کنند.</p>
+            <button className="primary-button" type="button" onClick={onOpenContact}>
+              <Icon name="chat" size={17} />
+              گفتگو با پشتیبانی
+              <Icon name="arrow" size={15} />
+            </button>
+          </div>
+          <div className="contact-support-decoration" aria-hidden="true">
+            <span className="contact-orbit contact-orbit-one" />
+            <span className="contact-orbit contact-orbit-two" />
+            <span className="contact-decoration-icon"><Icon name="chat" size={32} /></span>
+          </div>
+        </section>
+
+        <section className="panel contact-topics" aria-labelledby="contact-topics-title">
+          <div className="contact-topics-heading">
+            <span className="eyebrow">کنارت هستیم</span>
+            <h2 id="contact-topics-title">برای چه موضوعی راهنمایی می‌خواهی؟</h2>
+            <p>موضوع درخواستت را مشخص کن تا گفت‌وگو را راحت‌تر پیش ببری.</p>
+          </div>
+          <div className="contact-topic-list">
+            {topics.map((topic) => (
+              <article className="contact-topic" key={topic.title}>
+                <span className={`feature-icon ${topic.tone}`}><Icon name={topic.icon} size={19} /></span>
+                <div>
+                  <h3>{topic.title}</h3>
+                  <p>{topic.description}</p>
+                </div>
+              </article>
+            ))}
+          </div>
+          <p className="contact-order-note"><Icon name="check" size={15} /> اگر دربارهٔ سفارشی پیام می‌دهی، شمارهٔ سفارش را هم بنویس.</p>
+        </section>
+      </div>
+    </div>
+  )
+}
+
+function AboutUsPage() {
+  const services: { title: string; description: string; icon: IconName }[] = [
+    { title: 'ثبت‌نام و امور اداری', description: 'راهنمایی برای انجام فرایندهای آنلاین', icon: 'receipt' },
+    { title: 'چاپ و اسکن', description: 'آماده‌سازی و دریافت آسان فایل‌ها', icon: 'printer' },
+    { title: 'اینترنت پرسرعت', description: 'دسترسی ساده به ابزارهای دیجیتال', icon: 'globe' },
+    { title: 'خدمات آموزشی', description: 'همراهی در ثبت‌نام و پیگیری آموزشی', icon: 'calendar' },
+    { title: 'بازی‌های آنلاین', description: 'محیطی مناسب برای سرگرمی', icon: 'sparkle' },
+    { title: 'پشتیبانی و مشاوره', description: 'پاسخ‌گویی و راهنمایی برای انتخاب خدمت', icon: 'support' },
+  ]
+  const values: { title: string; description: string; icon: IconName }[] = [
+    { title: 'یکپارچه', description: 'خدمات در یک پنل', icon: 'grid' },
+    { title: 'قابل‌پیگیری', description: 'وضعیت سفارش‌ها', icon: 'clock' },
+    { title: 'همراه شما', description: 'پشتیبانی در مسیر', icon: 'support' },
+    { title: 'با دقت', description: 'توجه به اطلاعات شما', icon: 'lock' },
+  ]
+
+  return (
+    <div className="about-page">
+      <section className="panel about-intro" aria-labelledby="about-intro-title">
+        <div className="about-intro-copy">
+          <span className="about-intro-eyebrow"><Icon name="sparkle" size={15} /> آشنایی با کافی‌نت ایکس</span>
+          <h2 id="about-intro-title">کارهای دیجیتال، <span>ساده‌تر و در دسترس‌تر</span></h2>
+          <p>کافی‌نت ایکس فضایی یکپارچه برای پیدا کردن خدمات، ثبت سفارش و پیگیری آن‌هاست. هدف ما این است که انجام کارهای دیجیتال و اداری، مسیری روشن و بی‌دردسر داشته باشد.</p>
+          <div className="about-intro-points">
+            <span><Icon name="check" size={15} /> انتخاب خدمت</span>
+            <span><Icon name="check" size={15} /> پیگیری سفارش</span>
+            <span><Icon name="check" size={15} /> راهنمایی و پشتیبانی</span>
+          </div>
+        </div>
+        <div className="about-brand-art" aria-hidden="true">
+          <span className="about-brand-orb" />
+          <img src="/kafinet-x-logo.png" alt="" />
+          <div><strong>کافی‌نت ایکس</strong><small>همراه کارهای روزمرهٔ دیجیتال شما</small></div>
+        </div>
+      </section>
+
+      <div className="about-values" aria-label="ویژگی‌های کافی‌نت ایکس">
+        {values.map((value) => (
+          <article className="panel about-value-card" key={value.title}>
+            <span className="about-value-icon"><Icon name={value.icon} size={19} /></span>
+            <div>
+              <strong>{value.title}</strong>
+              <small>{value.description}</small>
+            </div>
+          </article>
+        ))}
+      </div>
+
+      <section className="about-services" aria-labelledby="about-services-title">
+        <div className="about-services-heading">
+          <div><span className="eyebrow"><span className="eyebrow-dot" /> خدمات قابل دسترس</span><h2 id="about-services-title">چطور می‌تونیم همراهت باشیم؟</h2></div>
+          <p>از امور روزمره تا پشتیبانی، مسیر را متناسب با نیازت انتخاب کن.</p>
+        </div>
+        <div className="about-service-grid">
+          {services.map((service, index) => (
+            <article className="feature-card about-service-card" key={service.title}>
+              <span className={`feature-icon ${['violet', 'blue', 'mint'][index % 3]}`}><Icon name={service.icon} size={21} /></span>
+              <h3>{service.title}</h3>
+              <p>{service.description}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="panel about-mission" aria-labelledby="about-mission-title">
+        <span className="about-mission-icon"><Icon name="sparkle" size={20} /></span>
+        <div>
+          <span className="eyebrow">چشم‌انداز ما</span>
+          <h2 id="about-mission-title">ماموریت ما</h2>
+          <p>ارائهٔ خدماتی ساده، قابل‌پیگیری و دوستانه برای آسان‌تر شدن کارهای دیجیتال شما.</p>
+        </div>
+      </section>
+    </div>
   )
 }
 
@@ -2722,6 +3697,264 @@ function DemoConversationPage({
         />
       )}
     </>
+  )
+}
+
+function ColleagueChatPage({ role, settings }: { role: Role; settings: ColleagueChatSettings }) {
+  const [activeConversation, setActiveConversation] = useState<'manager' | 'team'>(role === 'operator' ? 'manager' : 'team')
+  const [messagesByConversation, setMessagesByConversation] = useState(() => ({
+    team: pruneColleagueChatMessages(loadColleagueChatMessages(), settings.retentionHours),
+    manager: pruneColleagueChatMessages(loadColleagueChatMessages(managerPrivateChatMessagesStorageKey), settings.retentionHours),
+  }))
+  const [draft, setDraft] = useState('')
+  const [error, setError] = useState('')
+  const messageAreaRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const senderRole = role === 'admin' ? 'admin' : 'operator'
+  const senderName = role === 'admin' ? 'آرمان رضایی' : 'سارا احمدی'
+  const isManagerConversation = activeConversation === 'manager'
+    && (role === 'operator' || messagesByConversation.manager.length > 0)
+  const messages = isManagerConversation ? messagesByConversation.manager : messagesByConversation.team
+  const lastTeamMessage = messagesByConversation.team[messagesByConversation.team.length - 1]
+  const lastManagerMessage = messagesByConversation.manager[messagesByConversation.manager.length - 1]
+  const firstOperatorMessage = messagesByConversation.manager.find((message) => message.senderRole === 'operator')
+  const managerPrivateTitle = role === 'admin'
+    ? firstOperatorMessage?.senderName ?? 'اپراتور'
+    : 'مدیر سایت'
+  const formatMessagePreview = (message: ColleagueChatMessage | undefined, emptyLabel: string) => {
+    if (!message) return emptyLabel
+    return `${message.senderName}: ${message.text || `فایل ${message.attachment?.name ?? ''}`}`
+  }
+
+  useEffect(() => {
+    const loadRetainedMessages = (storageKey: string) => {
+      const loaded = loadColleagueChatMessages(storageKey)
+      const retained = pruneColleagueChatMessages(loaded, settings.retentionHours)
+      if (retained.length !== loaded.length) {
+        try {
+          localStorage.setItem(storageKey, JSON.stringify(retained))
+        } catch (storageError) {
+          console.error('Could not clean up expired colleague chat messages.', storageError)
+          setError('پاک‌سازی پیام‌های قدیمی انجام نشد. فضای ذخیره‌سازی مرورگر را بررسی کنید.')
+        }
+      }
+      return retained
+    }
+
+    const syncMessages = () => {
+      const nextMessages = {
+        team: loadRetainedMessages(colleagueChatMessagesStorageKey),
+        manager: loadRetainedMessages(managerPrivateChatMessagesStorageKey),
+      }
+      setMessagesByConversation((current) => {
+        const sameMessages = (currentMessages: ColleagueChatMessage[], next: ColleagueChatMessage[]) =>
+          currentMessages.length === next.length
+          && currentMessages.every((message, index) => message.id === next[index].id && message.createdAt === next[index].createdAt)
+
+        return sameMessages(current.team, nextMessages.team) && sameMessages(current.manager, nextMessages.manager)
+          ? current
+          : nextMessages
+      })
+    }
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === colleagueChatMessagesStorageKey
+        || event.key === managerPrivateChatMessagesStorageKey
+        || event.key === null) {
+        syncMessages()
+      }
+    }
+    const handleCleanup = () => syncMessages()
+
+    syncMessages()
+    const cleanupInterval = window.setInterval(syncMessages, 60_000)
+    window.addEventListener('storage', handleStorage)
+    window.addEventListener(colleagueChatCleanupEvent, handleCleanup)
+    return () => {
+      window.clearInterval(cleanupInterval)
+      window.removeEventListener('storage', handleStorage)
+      window.removeEventListener(colleagueChatCleanupEvent, handleCleanup)
+    }
+  }, [settings.retentionHours])
+
+  useLayoutEffect(() => {
+    const messageArea = messageAreaRef.current
+    if (messageArea) messageArea.scrollTop = messageArea.scrollHeight
+  }, [messages])
+
+  const saveMessage = (text: string, attachment?: DemoAttachment) => {
+    if (!text.trim() && !attachment) return
+    const newMessage: ColleagueChatMessage = {
+      id: `colleague-message-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
+      senderRole,
+      senderName,
+      text,
+      createdAt: new Date().toISOString(),
+      ...(attachment ? { attachment } : {}),
+    }
+    const nextMessages = [...messages, newMessage]
+    const storageKey = isManagerConversation ? managerPrivateChatMessagesStorageKey : colleagueChatMessagesStorageKey
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(nextMessages))
+    } catch (storageError) {
+      console.error('Could not save the colleague chat message.', storageError)
+      setError('ارسال پیام انجام نشد. فضای ذخیره‌سازی مرورگر را بررسی کنید.')
+      return
+    }
+
+    setMessagesByConversation((current) => ({
+      ...current,
+      [isManagerConversation ? 'manager' : 'team']: nextMessages,
+    }))
+    if (text.trim()) setDraft('')
+    setError('')
+  }
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    saveMessage(draft.trim())
+  }
+
+  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0]
+    event.currentTarget.value = ''
+    if (!file) return
+
+    if (file.size > settings.maxFileSizeMb * 1024 * 1024) {
+      setError(`حجم فایل باید حداکثر ${new Intl.NumberFormat('fa-IR').format(settings.maxFileSizeMb)} مگابایت باشد.`)
+      return
+    }
+
+    setError('')
+    const reader = new FileReader()
+    reader.onload = () => {
+      if (typeof reader.result !== 'string') {
+        setError('خواندن فایل انجام نشد. دوباره تلاش کنید.')
+        return
+      }
+
+      saveMessage('', {
+        name: file.name,
+        type: file.type || 'application/octet-stream',
+        size: file.size,
+        dataUrl: reader.result,
+      })
+    }
+    reader.onerror = () => {
+      console.error('Could not read the colleague chat attachment.', reader.error)
+      setError('خواندن فایل انجام نشد. دوباره تلاش کنید.')
+    }
+    reader.readAsDataURL(file)
+  }
+
+  return (
+    <div className="colleague-chat-layout">
+      <aside className="panel colleague-chat-list">
+        <header className="colleague-chat-list-header">
+          <h2>گفتگوها</h2>
+          <span>همکاران</span>
+        </header>
+        {role === 'operator' && (
+          <button
+            type="button"
+            className={`colleague-chat-room ${isManagerConversation ? 'active' : ''}`}
+            aria-current={isManagerConversation ? 'page' : undefined}
+            onClick={() => {
+              setActiveConversation('manager')
+              setDraft('')
+              setError('')
+            }}
+          >
+            <span className="colleague-chat-room-avatar manager"><Icon name="user" size={18} /></span>
+            <span className="colleague-chat-room-copy">
+              <strong>مدیر سایت</strong>
+              <small>{formatMessagePreview(lastManagerMessage, 'پیام خصوصی با مدیر سایت')}</small>
+            </span>
+            {lastManagerMessage && <time dateTime={lastManagerMessage.createdAt}>{new Intl.DateTimeFormat('fa-IR', { hour: '2-digit', minute: '2-digit' }).format(new Date(lastManagerMessage.createdAt))}</time>}
+          </button>
+        )}
+        <button
+          type="button"
+          className={`colleague-chat-room ${!isManagerConversation ? 'active' : ''}`}
+          aria-current={!isManagerConversation ? 'page' : undefined}
+          onClick={() => {
+            setActiveConversation('team')
+            setDraft('')
+            setError('')
+          }}
+        >
+          <span className="colleague-chat-room-avatar"><Icon name="users" size={19} /></span>
+          <span className="colleague-chat-room-copy">
+            <strong>گروه همکاران</strong>
+            <small>{formatMessagePreview(lastTeamMessage, 'گفتگوی داخلی تیم')}</small>
+          </span>
+          {lastTeamMessage && <time dateTime={lastTeamMessage.createdAt}>{new Intl.DateTimeFormat('fa-IR', { hour: '2-digit', minute: '2-digit' }).format(new Date(lastTeamMessage.createdAt))}</time>}
+        </button>
+        {role === 'admin' && messagesByConversation.manager.length > 0 && (
+          <button
+            type="button"
+            className={`colleague-chat-room ${isManagerConversation ? 'active' : ''}`}
+            aria-current={isManagerConversation ? 'page' : undefined}
+            onClick={() => {
+              setActiveConversation('manager')
+              setDraft('')
+              setError('')
+            }}
+          >
+            <span className="colleague-chat-room-avatar manager"><Icon name="support" size={18} /></span>
+            <span className="colleague-chat-room-copy">
+              <strong>{managerPrivateTitle}</strong>
+            </span>
+          </button>
+        )}
+      </aside>
+      <section className="demo-chat-main colleague-chat-main" aria-label={isManagerConversation ? managerPrivateTitle : 'گفتگوی همکاران'}>
+        <header className="demo-chat-header">
+          <div className="demo-chat-header-person">
+            <span className="demo-chat-avatar"><Icon name={isManagerConversation ? 'user' : 'users'} size={19} /></span>
+            <div>
+              <h2>{isManagerConversation ? managerPrivateTitle : 'گروه همکاران'}</h2>
+              <p>{isManagerConversation
+                ? `${role === 'admin' ? 'پیام خصوصی با اپراتور' : 'پیام خصوصی با مدیر سایت'} · آزمایشی`
+                : 'گفتگوی داخلی مدیران و اپراتورها · آزمایشی'}</p>
+            </div>
+          </div>
+        </header>
+        <div className="demo-chat-message-area" aria-live="polite" ref={messageAreaRef}>
+          <div className="demo-chat-day-separator"><span>{isManagerConversation ? managerPrivateTitle : 'گفتگوی همکاران'}</span></div>
+          {messages.length === 0 ? (
+            <p className="demo-chat-empty">{isManagerConversation
+              ? role === 'admin' ? 'هنوز پیامی از اپراتور دریافت نشده است.' : 'هنوز پیامی برای مدیر سایت نفرستاده‌اید.'
+              : 'هنوز پیامی در گروه نیست. گفتگو را شروع کنید.'}</p>
+          ) : messages.map((message) => (
+            <article className={`demo-chat-bubble ${message.senderRole === senderRole ? 'mine' : ''}`} key={message.id}>
+              <strong>{message.senderName}</strong>
+              {message.attachment && (
+                <a className="demo-chat-file colleague-chat-file" href={message.attachment.dataUrl} download={message.attachment.name}>
+                  <span><Icon name="receipt" size={19} /></span>
+                  <div><b>{message.attachment.name}</b><small>{formatDemoFileSize(message.attachment.size)} · پیوست</small></div>
+                </a>
+              )}
+              {message.text && <p>{message.text}</p>}
+              <time dateTime={message.createdAt}>{new Intl.DateTimeFormat('fa-IR', { hour: '2-digit', minute: '2-digit' }).format(new Date(message.createdAt))}</time>
+            </article>
+          ))}
+        </div>
+        {error && <p className="colleague-chat-error" role="alert">{error}</p>}
+        <form className="demo-chat-composer" onSubmit={handleSubmit}>
+          <input ref={fileInputRef} className="demo-chat-file-input" type="file" aria-label="انتخاب فایل برای ارسال" onChange={handleFileChange} />
+          <button type="button" className="demo-chat-attach" aria-label="ارسال فایل" title="ارسال فایل" onClick={() => fileInputRef.current?.click()}><Icon name="paperclip" size={20} /></button>
+          <input
+            aria-label="پیام همکاران"
+            value={draft}
+            onChange={(event) => setDraft(event.currentTarget.value)}
+            placeholder="پیام بنویس..."
+            maxLength={2000}
+          />
+          <button className="demo-chat-send" type="submit" disabled={!draft.trim()} aria-label="ارسال پیام"><Icon name="send" size={18} /></button>
+        </form>
+      </section>
+    </div>
   )
 }
 
@@ -3173,6 +4406,10 @@ function PanelPage({
   events,
   siteStyle,
   setSiteStyle,
+  colleagueChatSettings,
+  onSaveColleagueChatSettings,
+  printSettings,
+  onSavePrintSettings,
   addCategory,
   addService,
   updateCategory,
@@ -3201,6 +4438,10 @@ function PanelPage({
   events: AppEvent[]
   siteStyle: SiteStyle
   setSiteStyle: (siteStyle: SiteStyle) => void
+  colleagueChatSettings: ColleagueChatSettings
+  onSaveColleagueChatSettings: (settings: ColleagueChatSettings) => boolean
+  printSettings: PrintSettings
+  onSavePrintSettings: (settings: PrintSettings) => boolean
   addCategory: (category: CatalogCategory) => void
   addService: (service: CatalogService) => void
   updateCategory: (category: CatalogCategory) => void
@@ -3223,6 +4464,7 @@ function PanelPage({
   const [adminSettingsSection, setAdminSettingsSection] = useState<AdminSettingsSection>('profile')
   const [adminUsers, setAdminUsers] = useState(() => loadAdminPeople(adminUsersStorageKey, 'admin users'))
   const [adminOperators, setAdminOperators] = useState(() => loadAdminPeople(adminOperatorsStorageKey, 'admin operators'))
+  const [adminManagers, setAdminManagers] = useState(() => loadAdminPeople(adminManagersStorageKey, 'admin managers'))
   const [addAdminPersonDialogOpen, setAddAdminPersonDialogOpen] = useState(false)
   const [editingAdminPerson, setEditingAdminPerson] = useState<AdminUser | null>(null)
   const [pendingDeleteAdminPerson, setPendingDeleteAdminPerson] = useState<AdminUser | null>(null)
@@ -3230,16 +4472,20 @@ function PanelPage({
   const [adminPeopleActionError, setAdminPeopleActionError] = useState('')
   const isAdminUsersPage = role === 'admin' && page === 'کاربران'
   const isAdminOperatorsPage = role === 'admin' && page === 'اپراتورها'
-  const isAdminPeoplePage = isAdminUsersPage || isAdminOperatorsPage
-  const adminPersonLabel = isAdminUsersPage ? 'کاربر' : 'اپراتور'
-  const adminPeopleStorageKey = isAdminUsersPage ? adminUsersStorageKey : adminOperatorsStorageKey
-  const adminPeople = isAdminUsersPage ? adminUsers : adminOperators
-  const setAdminPeople = isAdminUsersPage ? setAdminUsers : setAdminOperators
+  const isAdminManagersPage = role === 'admin' && page === 'مدیران'
+  const isAdminPeoplePage = isAdminUsersPage || isAdminOperatorsPage || isAdminManagersPage
+  const adminPersonLabel = isAdminUsersPage ? 'کاربر' : isAdminOperatorsPage ? 'اپراتور' : 'مدیر'
+  const adminPersonPlural = isAdminUsersPage ? 'کاربران' : isAdminOperatorsPage ? 'اپراتورها' : 'مدیران'
+  const adminPeopleStorageKey = isAdminUsersPage ? adminUsersStorageKey : isAdminOperatorsPage ? adminOperatorsStorageKey : adminManagersStorageKey
+  const adminPeople = isAdminUsersPage ? adminUsers : isAdminOperatorsPage ? adminOperators : adminManagers
+  const setAdminPeople = isAdminUsersPage ? setAdminUsers : isAdminOperatorsPage ? setAdminOperators : setAdminManagers
   const pageDescriptions: Record<string, string> = {
     'کیف پول': 'موجودی و تراکنش‌های حساب خود را مدیریت کنید.',
+    'مدیران': 'مدیران پنل را تعریف و اطلاعات آن‌ها را مدیریت کنید.',
     'کاربران': 'فهرست اعضا و وضعیت حساب‌های کافی‌نت ایکس.',
     'اپراتورها': 'مدیریت تیم پشتیبانی و اپراتورهای آنلاین.',
     'گفتگوها': 'پیام‌های تازه را بررسی و به گفتگوها پاسخ دهید.',
+    'چت همکاران': 'گفتگوی گروهی همکاران و پیام خصوصی اپراتورها با مدیر سایت.',
     'تنظیمات': 'تنظیمات حساب و ترجیحات پنل را تغییر دهید.',
     'سفارشات انجام‌شده': 'فهرست سفارش‌هایی که با موفقیت تکمیل شده‌اند.',
     'سفارشات': 'وضعیت و جزئیات سفارش‌های خود را پیگیری کنید.',
@@ -3325,13 +4571,17 @@ function PanelPage({
 
   return (
     <>
-      {page !== 'کیف پول' && <div className="welcome-row section-welcome"><div><div className="eyebrow"><span className="eyebrow-dot" /> پنل {roleLabels[role]}</div><h1>{page}</h1><p>{pageDescriptions[page] ?? 'خلاصهٔ فعالیت‌ها و اطلاعات حساب شما.'}</p></div>{page !== 'دانلودها' && page !== 'تنظیمات' && page !== 'تنظیمات ظاهری' && page !== 'گفتگوها' && <button className="primary-button" type="button" onClick={isAdminPeoplePage ? () => { setAdminPeopleActionError(''); setAddAdminPersonDialogOpen(true) } : undefined}><Icon name="plus" size={17} />افزودن مورد جدید</button>}</div>}
+      {page !== 'کیف پول' && <div className="welcome-row section-welcome"><div><div className="eyebrow"><span className="eyebrow-dot" /> پنل {roleLabels[role]}</div><h1>{page}</h1><p>{pageDescriptions[page] ?? 'خلاصهٔ فعالیت‌ها و اطلاعات حساب شما.'}</p></div>{page !== 'دانلودها' && page !== 'تنظیمات' && page !== 'تنظیمات ظاهری' && page !== 'گفتگوها' && page !== 'چت همکاران' && <button className="primary-button" type="button" onClick={isAdminPeoplePage ? () => { setAdminPeopleActionError(''); setAddAdminPersonDialogOpen(true) } : undefined}><Icon name="plus" size={17} />افزودن مورد جدید</button>}</div>}
       {page === 'تنظیمات' && role === 'admin' ? (
         <AdminSettingsPage
           section={adminSettingsSection}
           setSection={setAdminSettingsSection}
           siteStyle={siteStyle}
           setSiteStyle={setSiteStyle}
+          colleagueChatSettings={colleagueChatSettings}
+          onSaveColleagueChatSettings={onSaveColleagueChatSettings}
+          printSettings={printSettings}
+          onSavePrintSettings={onSavePrintSettings}
           role={role}
           profileImage={profileImage}
           onProfileImageChange={onProfileImageChange}
@@ -3369,20 +4619,29 @@ function PanelPage({
           onCloseDemoConversation={onCloseDemoConversation}
           onCancelDemoOrder={onCancelDemoOrder}
         />
+      ) : page === 'چت همکاران' ? colleagueChatSettings.enabled ? (
+        <ColleagueChatPage role={role} settings={colleagueChatSettings} />
+      ) : (
+        <AdminSettingsNoticePage
+          icon="chat"
+          title="چت همکاران غیرفعال است"
+          description="مدیر سایت دسترسی چت همکاران را غیرفعال کرده است."
+          notice="برای فعال‌سازی دوباره، مدیر سایت باید این قابلیت را از تنظیمات مدیریت روشن کند."
+        />
       ) : isAdminPeoplePage ? (
         <section className="panel orders-panel panel-list admin-people-panel">
           <div className="panel-heading">
             <div>
-              <h2>{isAdminUsersPage ? 'کاربران ثبت‌شده' : 'اپراتورهای ثبت‌شده'}</h2>
+              <h2>{isAdminUsersPage ? 'کاربران ثبت‌شده' : isAdminOperatorsPage ? 'اپراتورهای ثبت‌شده' : 'مدیران ثبت‌شده'}</h2>
               <p>{new Intl.NumberFormat('fa-IR').format(adminPeople.length)} {adminPersonLabel}</p>
             </div>
           </div>
-          <p className="admin-people-presence-note">وضعیت {isAdminUsersPage ? 'کاربران' : 'اپراتورها'} پس از راه‌اندازی ورود و خروج واقعی به‌روزرسانی می‌شود.</p>
+          <p className="admin-people-presence-note">{isAdminManagersPage ? 'ثبت مدیر در این نسخهٔ آزمایشی فقط در همین مرورگر ذخیره می‌شود و هنوز دسترسی ورود ایجاد نمی‌کند.' : `وضعیت ${adminPersonPlural} پس از راه‌اندازی ورود و خروج واقعی به‌روزرسانی می‌شود.`}</p>
           {adminPeopleActionError && !pendingDeleteAdminPerson && <p className="user-form-error admin-people-action-error" role="alert">{adminPeopleActionError}</p>}
           {adminPeople.length === 0 ? (
             <div className="downloads-empty admin-users-empty">
-              <span className="downloads-empty-icon"><Icon name={isAdminUsersPage ? 'users' : 'support'} size={24} /></span>
-              <h3>هنوز {isAdminUsersPage ? 'کاربری' : 'اپراتوری'} ثبت نشده</h3>
+              <span className="downloads-empty-icon"><Icon name={isAdminUsersPage || isAdminManagersPage ? 'users' : 'support'} size={24} /></span>
+              <h3>هنوز {adminPersonLabel}ی ثبت نشده</h3>
               <p>برای شروع، اولین {adminPersonLabel} را ثبت کن.</p>
             </div>
           ) : (
@@ -3399,11 +4658,11 @@ function PanelPage({
                     <td><span className="status-pill admin-user-offline"><i />آفلاین</span></td>
                     <td>
                       <div className="admin-user-actions">
-                        <button
+                        {!isAdminManagersPage && <button
                           type="button"
                           className="admin-user-action report-user-action"
                           onClick={() => setReportingAdminPerson(person)}
-                        ><Icon name="receipt" size={14} /><span>گزارش کار</span></button>
+                        ><Icon name="receipt" size={14} /><span>گزارش کار</span></button>}
                         <button
                           type="button"
                           className="admin-user-action"
@@ -3593,7 +4852,7 @@ function AdminUserDialog({ onClose, onSave, initialUser, entityLabel }: {
       <section className="create-user-dialog" role="dialog" aria-modal="true" aria-labelledby="create-user-title">
         <div className="create-user-dialog-heading">
           <div>
-            <span className="feature-icon violet"><Icon name={entityLabel === 'کاربر' ? 'users' : 'support'} size={21} /></span>
+            <span className="feature-icon violet"><Icon name={entityLabel === 'اپراتور' ? 'support' : 'users'} size={21} /></span>
             <div>
               <h2 id="create-user-title">{initialUser ? `ویرایش ${entityLabel}` : `افزودن ${entityLabel}`}</h2>
               <p>{initialUser ? `اطلاعات ${entityLabel} را ویرایش کنید.` : `اطلاعات ${entityLabel} جدید را وارد کنید.`}</p>
@@ -3955,6 +5214,10 @@ function AdminSettingsPage({
   setSection,
   siteStyle,
   setSiteStyle,
+  colleagueChatSettings,
+  onSaveColleagueChatSettings,
+  printSettings,
+  onSavePrintSettings,
   role,
   profileImage,
   onProfileImageChange,
@@ -3973,6 +5236,10 @@ function AdminSettingsPage({
   setSection: (section: AdminSettingsSection) => void
   siteStyle: SiteStyle
   setSiteStyle: (siteStyle: SiteStyle) => void
+  colleagueChatSettings: ColleagueChatSettings
+  onSaveColleagueChatSettings: (settings: ColleagueChatSettings) => boolean
+  printSettings: PrintSettings
+  onSavePrintSettings: (settings: PrintSettings) => boolean
   role: Role
   profileImage: string
   onProfileImageChange: (image: string | null) => boolean
@@ -3991,8 +5258,12 @@ function AdminSettingsPage({
     { id: 'profile', label: 'مشخصات من', icon: 'user' },
     { id: 'catalog', label: 'دسته‌بندی و خدمات', icon: 'grid' },
     { id: 'events', label: 'رویدادها', icon: 'calendar' },
+    { id: 'print', label: 'چاپ و تکثیر', icon: 'printer' },
     { id: 'analytics', label: 'آمار بازدید سایت', icon: 'chart' },
     { id: 'seo', label: 'سئو سایت', icon: 'globe' },
+    { id: 'security', label: 'امنیت سایت', icon: 'lock' },
+    { id: 'payment', label: 'درگاه پرداخت', icon: 'wallet' },
+    { id: 'chat', label: 'چت همکاران', icon: 'chat' },
     { id: 'appearance', label: 'تنظیمات ظاهری', icon: 'settings' },
   ]
 
@@ -4013,6 +5284,8 @@ function AdminSettingsPage({
           <CatalogManager catalog={catalog} addCategory={addCategory} addService={addService} updateCategory={updateCategory} deleteCategory={deleteCategory} updateService={updateService} deleteService={deleteService} />
         ) : section === 'events' ? (
           <EventManager events={events} catalog={catalog} addEvent={addEvent} deleteEvent={deleteEvent} />
+        ) : section === 'print' ? (
+          <PrintSettingsPage settings={printSettings} onSave={onSavePrintSettings} />
         ) : section === 'analytics' ? (
           <AdminSettingsNoticePage
             icon="chart"
@@ -4027,11 +5300,264 @@ function AdminSettingsPage({
             description="بررسی عنوان، توضیحات و وضعیت دیده‌شدن سایت در موتورهای جست‌وجو."
             notice="تنظیمات سئو هنوز به سامانهٔ منتشرشدهٔ سایت متصل نیست؛ تغییرات این بخش تا زمان اتصال، روی سایت اعمال نمی‌شوند."
           />
+        ) : section === 'security' ? (
+          <AdminSettingsNoticePage
+            icon="lock"
+            title="امنیت سایت"
+            description="مدیریت و بررسی تنظیمات امنیتی سایت."
+            notice="ابزارهای امنیتی هنوز به سرویس سمت سرور متصل نیستند؛ این بخش فعلاً فقط نمای آزمایشی تنظیمات امنیت سایت است."
+          />
+        ) : section === 'payment' ? (
+          <AdminSettingsNoticePage
+            icon="wallet"
+            title="درگاه پرداخت"
+            description="تنظیمات و اتصال خدمات سایت به درگاه پرداخت."
+            notice="تنظیمات اتصال درگاه در مرحلهٔ بعد اضافه می‌شود."
+          />
+        ) : section === 'chat' ? (
+          <ColleagueChatSettingsPage settings={colleagueChatSettings} onSave={onSaveColleagueChatSettings} />
         ) : (
           <AppearanceSettings siteStyle={siteStyle} setSiteStyle={setSiteStyle} />
         )}
       </div>
     </div>
+  )
+}
+
+function PrintSettingsPage({ settings, onSave }: {
+  settings: PrintSettings
+  onSave: (settings: PrintSettings) => boolean
+}) {
+  const [mode, setMode] = useState<PrintMode>('blackAndWhite')
+  const [selectedPaperId, setSelectedPaperId] = useState<PrintPaperId | null>(null)
+  const [draft, setDraft] = useState({
+    oneSidedTextPrice: '',
+    twoSidedTextPrice: '',
+    oneSidedImagePrice: '',
+    twoSidedImagePrice: '',
+  })
+  const [feedback, setFeedback] = useState<{ message: string; isError: boolean } | null>(null)
+
+  const selectedPaper = selectedPaperId
+    ? settings[mode][selectedPaperId]
+    : null
+  const selectedPaperType = printPaperTypes.find((paper) => paper.id === selectedPaperId)
+
+  const handleModeChange = (nextMode: PrintMode) => {
+    setMode(nextMode)
+    setSelectedPaperId(null)
+    setDraft({ oneSidedTextPrice: '', twoSidedTextPrice: '', oneSidedImagePrice: '', twoSidedImagePrice: '' })
+    setFeedback(null)
+  }
+
+  const handlePaperSelect = (paperId: PrintPaperId) => {
+    const paper = settings[mode][paperId]
+    setSelectedPaperId(paperId)
+    setDraft({
+      oneSidedTextPrice: paper.oneSidedTextPrice > 0 ? String(paper.oneSidedTextPrice) : '',
+      twoSidedTextPrice: paper.twoSidedTextPrice > 0 ? String(paper.twoSidedTextPrice) : '',
+      oneSidedImagePrice: paper.oneSidedImagePrice > 0 ? String(paper.oneSidedImagePrice) : '',
+      twoSidedImagePrice: paper.twoSidedImagePrice > 0 ? String(paper.twoSidedImagePrice) : '',
+    })
+    setFeedback(null)
+  }
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!selectedPaperId) return
+
+    const oneSidedTextPrice = Number(draft.oneSidedTextPrice)
+    const twoSidedTextPrice = Number(draft.twoSidedTextPrice)
+    const oneSidedImagePrice = Number(draft.oneSidedImagePrice)
+    const twoSidedImagePrice = Number(draft.twoSidedImagePrice)
+    if (!Number.isSafeInteger(oneSidedTextPrice) || oneSidedTextPrice < 1
+      || !Number.isSafeInteger(twoSidedTextPrice) || twoSidedTextPrice < 1
+      || !Number.isSafeInteger(oneSidedImagePrice) || oneSidedImagePrice < 1
+      || !Number.isSafeInteger(twoSidedImagePrice) || twoSidedImagePrice < 1) {
+      setFeedback({ message: 'هر چهار قیمت باید عدد صحیح بزرگ‌تر از صفر باشد.', isError: true })
+      return
+    }
+
+    const nextSettings: PrintSettings = {
+      ...settings,
+      [mode]: {
+        ...settings[mode],
+        [selectedPaperId]: { oneSidedTextPrice, twoSidedTextPrice, oneSidedImagePrice, twoSidedImagePrice },
+      },
+    }
+    if (!onSave(nextSettings)) {
+      setFeedback({ message: 'ذخیره تنظیمات انجام نشد. فضای ذخیره‌سازی مرورگر را بررسی کنید.', isError: true })
+      return
+    }
+
+    setFeedback({ message: 'تنظیمات این برگه ذخیره شد.', isError: false })
+  }
+
+  const formatPrice = (price: number) => price > 0
+    ? `${new Intl.NumberFormat('fa-IR').format(price)} ریال`
+    : 'ثبت نشده'
+
+  return (
+    <section className="panel appearance-panel print-settings-panel">
+      <div className="panel-heading">
+        <div className="catalog-manager-heading">
+          <span className="metric-icon purple"><Icon name="printer" size={19} /></span>
+          <div><h2>تنظیمات چاپ و تکثیر</h2><p>نوع چاپ و برگه را انتخاب کنید و قیمت‌های چاپ را ثبت کنید.</p></div>
+        </div>
+      </div>
+
+      <div className="print-mode-buttons" role="group" aria-label="نوع چاپ">
+        <button type="button" className={`print-mode-button ${mode === 'blackAndWhite' ? 'active' : ''}`} aria-pressed={mode === 'blackAndWhite'} onClick={() => handleModeChange('blackAndWhite')}>
+          <Icon name="printer" size={18} />
+          <span>چاپ سیاه و سفید</span>
+        </button>
+        <button type="button" className={`print-mode-button ${mode === 'color' ? 'active' : ''}`} aria-pressed={mode === 'color'} onClick={() => handleModeChange('color')}>
+          <Icon name="printer" size={18} />
+          <span>چاپ رنگی</span>
+        </button>
+      </div>
+
+      <div className="print-paper-section">
+        <h3>انواع برگه</h3>
+        <div className="print-paper-grid" role="group" aria-label="انتخاب نوع برگه">
+          {printPaperTypes.map((paper) => {
+            const prices = settings[mode][paper.id]
+            return (
+              <button
+                type="button"
+                key={paper.id}
+                className={`print-paper-button ${selectedPaperId === paper.id ? 'active' : ''}`}
+                aria-pressed={selectedPaperId === paper.id}
+                onClick={() => handlePaperSelect(paper.id)}
+              >
+                <span className="print-paper-size-mark">{paper.label}</span>
+                <strong>{paper.label}</strong>
+                <small>{paper.dimensions}</small>
+                <span className="print-paper-price-status">{prices.oneSidedTextPrice > 0 && prices.twoSidedTextPrice > 0 && prices.oneSidedImagePrice > 0 && prices.twoSidedImagePrice > 0 ? 'قیمت ثبت شده' : 'قیمت ثبت نشده'}</span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {selectedPaperId && selectedPaperType && selectedPaper && (
+        <form className="print-paper-form" onSubmit={handleSubmit}>
+          <div className="print-paper-form-heading">
+            <div>
+              <h3>قیمت‌های برگه {selectedPaperType.label}</h3>
+              <p>{mode === 'blackAndWhite' ? 'چاپ سیاه و سفید' : 'چاپ رنگی'} · قیمت هر نسخه بر حسب ریال</p>
+            </div>
+          </div>
+          <div className="print-price-grid">
+            <label className="settings-field">
+              قیمت چاپ متن یک‌رو (ریال)
+              <input type="number" min="1" step="1" inputMode="numeric" value={draft.oneSidedTextPrice} onChange={(event) => setDraft((current) => ({ ...current, oneSidedTextPrice: event.target.value }))} required />
+              <small>فعلی: {formatPrice(selectedPaper.oneSidedTextPrice)}</small>
+            </label>
+            <label className="settings-field">
+              قیمت چاپ متن دورو (ریال)
+              <input type="number" min="1" step="1" inputMode="numeric" value={draft.twoSidedTextPrice} onChange={(event) => setDraft((current) => ({ ...current, twoSidedTextPrice: event.target.value }))} required />
+              <small>فعلی: {formatPrice(selectedPaper.twoSidedTextPrice)}</small>
+            </label>
+            <label className="settings-field">
+              قیمت چاپ تصویر یک‌رو (ریال)
+              <input type="number" min="1" step="1" inputMode="numeric" value={draft.oneSidedImagePrice} onChange={(event) => setDraft((current) => ({ ...current, oneSidedImagePrice: event.target.value }))} required />
+              <small>فعلی: {formatPrice(selectedPaper.oneSidedImagePrice)}</small>
+            </label>
+            <label className="settings-field">
+              قیمت چاپ تصویر دورو (ریال)
+              <input type="number" min="1" step="1" inputMode="numeric" value={draft.twoSidedImagePrice} onChange={(event) => setDraft((current) => ({ ...current, twoSidedImagePrice: event.target.value }))} required />
+              <small>فعلی: {formatPrice(selectedPaper.twoSidedImagePrice)}</small>
+            </label>
+          </div>
+          <button className="primary-button print-settings-save" type="submit">ذخیره تنظیمات برگه</button>
+        </form>
+      )}
+      {feedback && <p className={`catalog-feedback ${feedback.isError ? 'error' : 'success'}`} role={feedback.isError ? 'alert' : 'status'}>{feedback.message}</p>}
+      <p className="print-settings-storage-note">قیمت‌های هر نوع چاپ در همین مرورگر ذخیره می‌شوند.</p>
+    </section>
+  )
+}
+
+function ColleagueChatSettingsPage({ settings, onSave }: {
+  settings: ColleagueChatSettings
+  onSave: (settings: ColleagueChatSettings) => boolean
+}) {
+  const [draft, setDraft] = useState(settings)
+  const [feedback, setFeedback] = useState<{ message: string; isError: boolean } | null>(null)
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!onSave(draft)) {
+      setFeedback({ message: 'ذخیره تنظیمات انجام نشد. فضای ذخیره‌سازی مرورگر را بررسی کنید.', isError: true })
+      return
+    }
+
+    setFeedback({ message: 'تنظیمات چت همکاران ذخیره شد.', isError: false })
+  }
+
+  return (
+    <section className="panel appearance-panel colleague-chat-settings-panel">
+      <div className="panel-heading">
+        <div className="catalog-manager-heading">
+          <span className="metric-icon purple"><Icon name="chat" size={19} /></span>
+          <div><h2>تنظیمات چت همکاران</h2><p>دسترسی، حجم فایل و زمان نگهداری پیام‌ها را مدیریت کنید.</p></div>
+        </div>
+      </div>
+      <form className="colleague-chat-settings-form" onSubmit={handleSubmit}>
+        <label className="colleague-chat-setting-toggle">
+          <input
+            type="checkbox"
+            checked={draft.enabled}
+            onChange={(event) => {
+              const enabled = event.currentTarget.checked
+              setDraft((current) => ({ ...current, enabled }))
+              setFeedback(null)
+            }}
+          />
+          <span className="colleague-chat-setting-switch" aria-hidden="true"><i /></span>
+          <span className="colleague-chat-setting-copy">
+            <strong>فعال بودن چت همکاران</strong>
+            <small>با خاموش کردن این گزینه، دسترسی مدیران و اپراتورها به چت بسته می‌شود.</small>
+          </span>
+        </label>
+        <label className="settings-field">
+          حداکثر حجم فایل ارسالی
+          <select
+            value={draft.maxFileSizeMb}
+            onChange={(event) => {
+              const value = Number(event.currentTarget.value)
+              if (value === 1 || value === 2) {
+                setDraft((current) => ({ ...current, maxFileSizeMb: value }))
+                setFeedback(null)
+              }
+            }}
+          >
+            <option value={1}>۱ مگابایت</option>
+            <option value={2}>۲ مگابایت</option>
+          </select>
+        </label>
+        <label className="settings-field">
+          پاک‌سازی خودکار پیام‌های قدیمی
+          <select
+            value={draft.retentionHours}
+            onChange={(event) => {
+              const value = Number(event.currentTarget.value)
+              if (value === 12 || value === 24) {
+                setDraft((current) => ({ ...current, retentionHours: value }))
+                setFeedback(null)
+              }
+            }}
+          >
+            <option value={12}>پس از ۱۲ ساعت</option>
+            <option value={24}>پس از ۲۴ ساعت</option>
+          </select>
+        </label>
+        <button className="primary-button settings-save" type="submit">ذخیره تنظیمات</button>
+        <p className="colleague-chat-settings-note">تنظیمات و پیام‌ها در همین مرورگر ذخیره می‌شوند. تا وقتی برنامه باز است، پاک‌سازی هر دقیقه بررسی می‌شود.</p>
+        {feedback && <p className={`catalog-feedback ${feedback.isError ? 'error' : 'success'}`} role={feedback.isError ? 'alert' : 'status'}>{feedback.message}</p>}
+      </form>
+    </section>
   )
 }
 
